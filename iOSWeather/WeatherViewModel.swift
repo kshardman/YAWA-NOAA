@@ -58,7 +58,7 @@ final class WeatherViewModel: ObservableObject {
 
         let dir = windDirection.isEmpty ? "" : "\(windDirection) "
         let base = "\(windValue)"
-        let gust = gustValue > 0 ? "G\(gustValue)" : ""
+        let gust = gustValue > windValue ? "G\(gustValue)" : ""
 
         return dir + base + gust
     }
