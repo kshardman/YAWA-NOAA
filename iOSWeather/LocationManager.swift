@@ -17,7 +17,12 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     @Published var status: CLAuthorizationStatus = .notDetermined
     @Published var errorMessage: String?
 
+    // City, ST for display
+    @Published var locationName: String?
+
     private let manager = CLLocationManager()
+    private let geocoder = CLGeocoder()
+    private var lastGeocodedCoord: CLLocationCoordinate2D?
 
     override init() {
         super.init()
@@ -38,22 +43,64 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         status = manager.authorizationStatus
-        if status == .authorizedWhenInUse || status == .authorizedAlways {
+        switch status {
+        case .authorizedWhenInUse, .authorizedAlways:
             manager.requestLocation()
-        } else if status == .denied || status == .restricted {
+        case .denied, .restricted:
             errorMessage = "Location access is disabled."
+        default:
+            break
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        coordinate = locations.last?.coordinate
+        guard let loc = locations.last else { return }
+        coordinate = loc.coordinate
+        Task { await reverseGeocodeIfNeeded(for: loc) }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         errorMessage = "Could not get location."
         print("Location error:", error)
     }
+
+    // MARK: - Reverse geocode (City, ST)
+
+    private func reverseGeocodeIfNeeded(for location: CLLocation) async {
+        // Avoid geocoding constantly for tiny GPS jitter (~1km)
+        if let last = lastGeocodedCoord {
+            let dLat = abs(last.latitude - location.coordinate.latitude)
+            let dLon = abs(last.longitude - location.coordinate.longitude)
+            if dLat < 0.01 && dLon < 0.01 {
+                return
+            }
+        }
+        lastGeocodedCoord = location.coordinate
+
+        geocoder.cancelGeocode()
+
+        do {
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            guard let place = placemarks.first else { return }
+
+            let city = place.locality
+            let state = place.administrativeArea
+
+            if let city, let state {
+                locationName = "\(city), \(state)"
+            } else if let city {
+                locationName = city
+            } else if let state {
+                locationName = state
+            } else {
+                locationName = nil
+            }
+        } catch {
+            // Fail silently; forecast still works
+        }
+    }
 }
+
 
 // MARK: - NOAA/NWS API models
 
@@ -243,8 +290,18 @@ struct ForecastView: View {
                 ProgressView("Loading forecast…")
             }
         }
-        .navigationTitle("7-Day Forecast")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 2) {
+                    Text("7-Day Forecast")
+                        .font(.headline)
+                    Text(location.locationName ?? " ")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
         .task {
             location.request()
         }
