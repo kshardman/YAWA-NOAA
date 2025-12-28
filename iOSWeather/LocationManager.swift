@@ -8,6 +8,7 @@
 
 import SwiftUI
 import CoreLocation
+import Combine
 
 // MARK: - Location
 
@@ -218,7 +219,7 @@ struct ForecastView: View {
         .task {
             location.request()
         }
-        .onChange(of: location.coordinate) { _, coord in
+        .onReceive(location.$coordinate) { coord in
             guard let coord else { return }
             Task { await vm.loadIfNeeded(for: coord) }
         }
