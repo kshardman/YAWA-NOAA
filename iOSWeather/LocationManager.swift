@@ -177,6 +177,28 @@ final class ForecastViewModel: ObservableObject {
 
 // MARK: - View
 
+private func forecastSymbol(for text: String, isDaytime: Bool) -> String {
+    let t = text.lowercased()
+
+    if t.contains("thunder") { return "cloud.bolt.rain.fill" }
+    if t.contains("snow") { return "snowflake" }
+    if t.contains("sleet") || t.contains("ice") { return "cloud.sleet.fill" }
+    if t.contains("rain") || t.contains("showers") { return "cloud.rain.fill" }
+    if t.contains("fog") || t.contains("haze") { return "cloud.fog.fill" }
+    if t.contains("wind") { return "wind" }
+
+    if t.contains("cloud") {
+        return isDaytime ? "cloud.sun.fill" : "cloud.moon.fill"
+    }
+
+    if t.contains("sun") || t.contains("clear") {
+        return isDaytime ? "sun.max.fill" : "moon.stars.fill"
+    }
+
+    return "cloud.fill"
+}
+
+
 struct ForecastView: View {
     @StateObject private var location = LocationManager()
     @StateObject private var vm = ForecastViewModel()
@@ -199,8 +221,15 @@ struct ForecastView: View {
                             .font(.headline)
                     }
 
-                    Text(p.shortForecast)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Image(systemName: forecastSymbol(for: p.shortForecast, isDaytime: p.isDaytime))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.blue)
+                            .font(.title2)
+
+                        Text(p.shortForecast)
+                            .foregroundStyle(.secondary)
+                    }
 
                     Text("\(p.windDirection) \(p.windSpeed)")
                         .font(.caption)
