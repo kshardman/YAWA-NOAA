@@ -104,6 +104,23 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
 // MARK: - NOAA/NWS API models
 
+struct NWSAlertsResponse: Decodable {
+    struct Feature: Decodable, Identifiable {
+        struct Properties: Decodable {
+            let event: String
+            let headline: String?
+            let severity: String?
+            let urgency: String?
+            let areaDesc: String?
+        }
+
+        let id: String
+        let properties: Properties
+    }
+
+    let features: [Feature]
+}
+
 struct NWSPointsResponse: Decodable {
     struct Properties: Decodable {
         let forecast: String
@@ -149,6 +166,24 @@ final class NOAAService {
         self.session = URLSession(configuration: cfg)
     }
 
+    func fetchActiveAlerts(lat: Double, lon: Double) async throws -> [NWSAlertsResponse.Feature] {
+        guard let url = URL(string: "https://api.weather.gov/alerts/active?point=\(lat),\(lon)") else {
+            throw NOAAServiceError.invalidURL
+        }
+
+        var req = URLRequest(url: url)
+        req.setValue("iOSWeather (personal app)", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/geo+json", forHTTPHeaderField: "Accept")
+
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw NOAAServiceError.badStatus(http.statusCode)
+        }
+
+        let decoded = try JSONDecoder().decode(NWSAlertsResponse.self, from: data)
+        return decoded.features
+    }
+    
     func fetch7DayPeriods(lat: Double, lon: Double) async throws -> [NWSForecastResponse.Period] {
         // 1) points endpoint
         guard let pointsURL = URL(string: "https://api.weather.gov/points/\(lat),\(lon)") else {
@@ -190,6 +225,7 @@ final class NOAAService {
 @MainActor
 final class ForecastViewModel: ObservableObject {
     @Published var periods: [NWSForecastResponse.Period] = []
+    @Published var alerts: [NWSAlertsResponse.Feature] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
 
@@ -213,13 +249,19 @@ final class ForecastViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let p = try await service.fetch7DayPeriods(lat: coord.latitude, lon: coord.longitude)
-            periods = p
+            async let periodsTask = service.fetch7DayPeriods(lat: coord.latitude, lon: coord.longitude)
+            async let alertsTask  = service.fetchActiveAlerts(lat: coord.latitude, lon: coord.longitude)
+
+            periods = try await periodsTask
+            alerts  = try await alertsTask
+
             errorMessage = nil
         } catch {
             errorMessage = "Forecast unavailable."
         }
     }
+    
+    
 }
 
 // MARK: - View
@@ -250,8 +292,51 @@ struct ForecastView: View {
     @StateObject private var location = LocationManager()
     @StateObject private var vm = ForecastViewModel()
 
+    private struct AlertBanner: View {
+        let alert: NWSAlertsResponse.Feature
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: symbolForSeverity(alert.properties.severity))
+                        .foregroundStyle(.orange)
+
+                    Text(alert.properties.event)
+                        .font(.headline)
+
+                    Spacer()
+                }
+
+                if let headline = alert.properties.headline, !headline.isEmpty {
+                    Text(headline)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else if let area = alert.properties.areaDesc, !area.isEmpty {
+                    Text(area)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+
+        private func symbolForSeverity(_ severity: String?) -> String {
+            switch severity?.lowercased() {
+            case "extreme", "severe": return "exclamationmark.octagon.fill"
+            case "moderate": return "exclamationmark.triangle.fill"
+            default: return "info.circle.fill"
+            }
+        }
+    }
+    
+    
     var body: some View {
         List {
+            if let top = vm.alerts.first {
+                Section {
+                    AlertBanner(alert: top)
+                }
+            }
             if let msg = location.errorMessage {
                 Text(msg).foregroundStyle(.secondary)
             }
