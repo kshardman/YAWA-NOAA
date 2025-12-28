@@ -1,10 +1,17 @@
 //
+//  ContentView 2.swift
+//  iOSWeather
+//
+//  Created by Keith Sharman on 12/28/25.
+//
+
+
+//
 //  ContentView.swift
 //  iOSWeather
 //
 //  Created by Keith Sharman on 12/17/25.
 //
-
 
 import SwiftUI
 import UIKit
@@ -70,13 +77,6 @@ struct ContentView: View {
         timeOfDay == .night ? 0.18 : 0.75
     }
 
-//    private var windDisplay: String {
-//        let base = viewModel.wind
-//        let gust = (viewModel.windGust == "--" || viewModel.windGust.isEmpty) ? "" : "G\(viewModel.windGust)"
-//        let dir  = viewModel.windDirection.isEmpty ? "" : "\(viewModel.windDirection) "
-//        return dir + base + gust
-//    }
-
     var body: some View {
         ZStack {
             ThemedSkyBackground(timeOfDay: timeOfDay, condition: conditionTheme)
@@ -96,6 +96,8 @@ struct ContentView: View {
                             isRefreshing: isManualRefreshing,
                             color: headerSecondary
                         )
+                        .animation(.easeInOut(duration: 0.25), value: isManualRefreshing)
+                        .animation(.easeInOut(duration: 0.25), value: viewModel.lastUpdated)
 
                         if !networkMonitor.isOnline {
                             pill("Offline — showing last update", "wifi.slash")
@@ -124,6 +126,39 @@ struct ContentView: View {
                         }
                     }
 
+                    // MARK: 7-Day Forecast Card (NEW)
+                    NavigationLink {
+                        ForecastView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "calendar")
+                                .font(.title3)
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(.blue)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("7-Day Forecast")
+                                    .font(.headline)
+                                    .foregroundStyle(.black)
+
+                                Text("Tap to view NOAA outlook")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.black.opacity(0.6))
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.black.opacity(0.35))
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, minHeight: 72)
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
+                    }
+                    .buttonStyle(.plain)
+
                     Spacer(minLength: 12)
                 }
                 .padding(.horizontal, 16)
@@ -132,7 +167,6 @@ struct ContentView: View {
             }
             // ✅ IMPORTANT: refreshable MUST be on ScrollView
             .refreshable {
-  //                  print("PULL REFRESH fired", Date())
                 isManualRefreshing = true
                 defer { isManualRefreshing = false }
 
@@ -140,11 +174,10 @@ struct ContentView: View {
                     successHaptic()
                 }
             }
-            // ✅ Also fine to keep .task on ScrollView
-            .task {
-                viewModel.loadCached()
-                await viewModel.fetchWeather()
-            }
+        }
+        .task {
+            viewModel.loadCached()
+            await viewModel.fetchWeather()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
@@ -261,8 +294,13 @@ private struct UpdatedStatusRow: View {
 
 // MARK: - Theme types
 
-private enum ConditionTheme: Equatable { case clear, hot, cold, rain, storm, hazy, offline, snow }
-private enum TimeOfDay: Equatable { case dawn, day, sunset, night }
+private enum ConditionTheme: Equatable {
+    case clear, hot, cold, rain, storm, hazy, offline, snow
+}
+
+private enum TimeOfDay: Equatable {
+    case dawn, day, sunset, night
+}
 
 // MARK: - Background
 
@@ -303,69 +341,90 @@ private struct ThemedSkyBackground: View {
     private var baseSkyColors: [Color] {
         switch timeOfDay {
         case .dawn:
-            return [Color(red: 0.55, green: 0.78, blue: 0.98),
-                    Color(red: 0.98, green: 0.82, blue: 0.70),
-                    Color(red: 0.96, green: 0.94, blue: 1.00)]
+            return [
+                Color(red: 0.55, green: 0.78, blue: 0.98),
+                Color(red: 0.98, green: 0.82, blue: 0.70),
+                Color(red: 0.96, green: 0.94, blue: 1.00)
+            ]
         case .day:
-            return [Color(red: 0.52, green: 0.80, blue: 0.98),
-                    Color(red: 0.76, green: 0.90, blue: 1.00),
-                    Color.white]
+            return [
+                Color(red: 0.52, green: 0.80, blue: 0.98),
+                Color(red: 0.76, green: 0.90, blue: 1.00),
+                Color.white
+            ]
         case .sunset:
-            return [Color(red: 0.36, green: 0.70, blue: 0.98),
-                    Color(red: 0.98, green: 0.72, blue: 0.55),
-                    Color(red: 0.98, green: 0.90, blue: 0.80)]
+            return [
+                Color(red: 0.36, green: 0.70, blue: 0.98),
+                Color(red: 0.98, green: 0.72, blue: 0.55),
+                Color(red: 0.98, green: 0.90, blue: 0.80)
+            ]
         case .night:
-            return [Color(red: 0.06, green: 0.12, blue: 0.24),
-                    Color(red: 0.12, green: 0.22, blue: 0.38),
-                    Color(red: 0.20, green: 0.30, blue: 0.45)]
+            return [
+                Color(red: 0.06, green: 0.12, blue: 0.24),
+                Color(red: 0.12, green: 0.22, blue: 0.38),
+                Color(red: 0.20, green: 0.30, blue: 0.45)
+            ]
         }
     }
 
     private var sunGlow: some View {
-        RadialGradient(colors: [Color.white.opacity(0.85), Color.white.opacity(0.20), Color.clear],
-                       center: UnitPoint(x: 0.55, y: 0.12),
-                       startRadius: 20,
-                       endRadius: 360)
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+        RadialGradient(
+            colors: [Color.white.opacity(0.85), Color.white.opacity(0.20), Color.clear],
+            center: UnitPoint(x: 0.55, y: 0.12),
+            startRadius: 20,
+            endRadius: 360
+        )
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 
     private var rainHaze: some View {
-        LinearGradient(colors: [Color.black.opacity(0.10), Color.clear, Color.black.opacity(0.06)],
-                       startPoint: .top,
-                       endPoint: .bottom)
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+        LinearGradient(
+            colors: [Color.black.opacity(0.10), Color.clear, Color.black.opacity(0.06)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 
     private var stormVignette: some View {
-        RadialGradient(colors: [Color.black.opacity(0.25), Color.black.opacity(0.10), Color.clear],
-                       center: .center,
-                       startRadius: 80,
-                       endRadius: 520)
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+        RadialGradient(
+            colors: [Color.black.opacity(0.25), Color.black.opacity(0.10), Color.clear],
+            center: .center,
+            startRadius: 80,
+            endRadius: 520
+        )
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 
     private var fogLayer: some View {
-        Rectangle().fill(Color.white).ignoresSafeArea().allowsHitTesting(false)
+        Rectangle()
+            .fill(Color.white)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
     }
 
     private var frostGlow: some View {
-        RadialGradient(colors: [Color.white.opacity(0.55), Color.clear],
-                       center: UnitPoint(x: 0.35, y: 0.18),
-                       startRadius: 20,
-                       endRadius: 320)
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+        RadialGradient(
+            colors: [Color.white.opacity(0.55), Color.clear],
+            center: UnitPoint(x: 0.35, y: 0.18),
+            startRadius: 20,
+            endRadius: 320
+        )
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 
     private var warmTint: some View {
-        LinearGradient(colors: [Color(red: 1.00, green: 0.78, blue: 0.55).opacity(0.40), Color.clear],
-                       startPoint: .top,
-                       endPoint: .bottom)
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+        LinearGradient(
+            colors: [Color(red: 1.00, green: 0.78, blue: 0.55).opacity(0.40), Color.clear],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
 
@@ -387,7 +446,5 @@ private func successHaptic() {
     gen.prepare()
     gen.notificationOccurred(.success)
 }
-
-
 
 #Preview { NavigationStack { ContentView() } }
