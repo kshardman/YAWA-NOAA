@@ -320,14 +320,17 @@ private struct DailyForecast: Identifiable {
     let night: NWSForecastResponse.Period?
 
     var highText: String {
-        "\(day.temperature)°\(day.temperatureUnit)"
+//        "\(day.temperature)°\(day.temperatureUnit)"
+        "\(day.temperature)°"
     }
 
     var lowText: String {
         if let night {
-            return "\(night.temperature)°\(night.temperatureUnit)"
+//            return "\(night.temperature)°\(night.temperatureUnit)"
+            return "\(night.temperature)°"
         } else {
-            return "\(day.temperature)°\(day.temperatureUnit)"
+//            return "\(day.temperature)°\(day.temperatureUnit)"
+            return "\(day.temperature)°"
         }
     }
 
