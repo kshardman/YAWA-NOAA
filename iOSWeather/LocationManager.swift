@@ -472,6 +472,7 @@ struct ForecastView: View {
                 .padding(.vertical, 6)
             }
         }
+        .onAppear { location.request() }
         .overlay {
             if vm.isLoading && vm.periods.isEmpty {
                 ProgressView("Loading forecast…")
@@ -483,7 +484,6 @@ struct ForecastView: View {
                 VStack(spacing: 2) {
                     Text("7-Day Forecast")
                         .font(.headline)
-
                     if let name = location.locationName {
                         Text(name)
                             .font(.subheadline)
