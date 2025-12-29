@@ -21,6 +21,7 @@ struct ContentView: View {
     @StateObject private var networkMonitor = NetworkMonitor()
     @StateObject private var viewModel = WeatherViewModel()
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var scheme
 
     // Manual refresh UI state (spinner + “Refreshing…”)
     @State private var isManualRefreshing = false
@@ -101,7 +102,7 @@ struct ContentView: View {
                         }
                         .padding(14)
                         .frame(maxWidth: .infinity, minHeight: 72)
-                        .background(Color(.secondarySystemBackground))
+                        .background(cardBackground())
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
                     }
@@ -138,6 +139,25 @@ struct ContentView: View {
 
     // MARK: - UI components
 
+    private func cardBackground() -> some View {
+        RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .fill(Color(.secondarySystemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(
+                        scheme == .light
+                            ? Color.black.opacity(0.08)
+                            : Color.white.opacity(0.06),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(
+                color: Color.black.opacity(scheme == .light ? 0.12 : 0.06),
+                radius: scheme == .light ? 14 : 10,
+                y: scheme == .light ? 8 : 6
+            )
+    }
+    
     private func pill(_ text: String, _ icon: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
@@ -174,7 +194,7 @@ struct ContentView: View {
         }
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, minHeight: 124)
-        .background(Color(.secondarySystemBackground))
+        .background(cardBackground())
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
     }
@@ -203,7 +223,7 @@ struct ContentView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 92)
-        .background(Color(.secondarySystemBackground))
+        .background(cardBackground())
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
     }
