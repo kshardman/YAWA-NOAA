@@ -395,7 +395,7 @@ struct ForecastView: View {
                         Spacer()
 
                         // High / Low
-                        Text("\(d.highText)  \(d.lowText)")
+                        Text("H \(d.highText)  L \(d.lowText)")
                             .font(.headline)
                     }
 
