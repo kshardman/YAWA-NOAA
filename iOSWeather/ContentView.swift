@@ -27,15 +27,14 @@ struct ContentView: View {
     @State private var isManualRefreshing = false
     var body: some View {
         ZStack {
-            Color(.systemBackground)
-                .ignoresSafeArea()
+            Color(.systemBackground).ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 18) {
 
                     // MARK: Header (no background)
                     VStack(spacing: 10) {
-                        Text("Current Conditions at Home")
+                        Text("Current Conditions")
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.primary)
 
@@ -141,20 +140,20 @@ struct ContentView: View {
 
     private func cardBackground() -> some View {
         RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .fill(Color(.systemBackground))
+            .fill(Color(.tertiarySystemBackground))   // ✅ closest List row match
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(
                         scheme == .light
                             ? Color.black.opacity(0.08)
-                            : Color.white.opacity(0.06),
+                            : Color.white.opacity(0.04),
                         lineWidth: 1
                     )
             )
             .shadow(
-                color: Color.black.opacity(scheme == .light ? 0.10 : 0.05),
-                radius: scheme == .light ? 12 : 8,
-                y: scheme == .light ? 6 : 4
+                color: Color.black.opacity(scheme == .light ? 0.10 : 0.03),
+                radius: scheme == .light ? 12 : 6,
+                y: scheme == .light ? 6 : 3
             )
     }
     
