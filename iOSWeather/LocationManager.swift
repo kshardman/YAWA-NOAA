@@ -23,6 +23,7 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     private let manager = CLLocationManager()
     private var lastGeocodedCoord: CLLocationCoordinate2D?
+    private let geocoder = CLGeocoder()
 
     override init() {
         super.init()
@@ -66,7 +67,6 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     // MARK: - Reverse geocode (City, ST)
 
-//    @available(iOS, deprecated: 26.0)
     private func reverseGeocodeIfNeeded(for location: CLLocation) async {
         if let last = lastGeocodedCoord {
             let dLat = abs(last.latitude - location.coordinate.latitude)
@@ -75,24 +75,23 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         }
         lastGeocodedCoord = location.coordinate
 
-        let pm = MKPlacemark(
-            coordinate: location.coordinate,
-            addressDictionary: nil
-        )
+        geocoder.cancelGeocode()
 
-        let city = pm.locality
-        let state = pm.administrativeArea
+        do {
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            guard let place = placemarks.first else { return }
 
-        await MainActor.run {
-            if let city, let state {
-                locationName = "\(city), \(state)"
-            } else if let city {
-                locationName = city
-            } else if let state {
-                locationName = state
-            } else {
-                locationName = nil
+            let city = place.locality
+            let state = place.administrativeArea
+
+            await MainActor.run {
+                if let city, let state { self.locationName = "\(city), \(state)" }
+                else if let city { self.locationName = city }
+                else if let state { self.locationName = state }
+                else { self.locationName = nil }
             }
+        } catch {
+            // silent fail is fine
         }
     }
 }
@@ -413,7 +412,6 @@ struct ForecastView: View {
         
     }
     
-    
     var body: some View {
         List {
             if let top = vm.alerts.first {
@@ -472,7 +470,6 @@ struct ForecastView: View {
                 .padding(.vertical, 6)
             }
         }
-        .onAppear { location.request() }
         .overlay {
             if vm.isLoading && vm.periods.isEmpty {
                 ProgressView("Loading forecast…")
