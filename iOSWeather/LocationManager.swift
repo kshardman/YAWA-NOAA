@@ -483,9 +483,12 @@ struct ForecastView: View {
                 VStack(spacing: 2) {
                     Text("7-Day Forecast")
                         .font(.headline)
-                    Text(location.locationName ?? " ")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+
+                    if let name = location.locationName {
+                        Text(name)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
