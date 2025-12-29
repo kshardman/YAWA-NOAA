@@ -9,6 +9,7 @@
 import SwiftUI
 import CoreLocation
 import Combine
+import MapKit
 
 // MARK: - Location
 
@@ -21,8 +22,8 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     @Published var locationName: String?
 
     private let manager = CLLocationManager()
-    private let geocoder = CLGeocoder()
     private var lastGeocodedCoord: CLLocationCoordinate2D?
+    
 
     override init() {
         super.init()
@@ -66,26 +67,24 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     // MARK: - Reverse geocode (City, ST)
 
+//    @available(iOS, deprecated: 26.0)
     private func reverseGeocodeIfNeeded(for location: CLLocation) async {
-        // Avoid geocoding constantly for tiny GPS jitter (~1km)
         if let last = lastGeocodedCoord {
             let dLat = abs(last.latitude - location.coordinate.latitude)
             let dLon = abs(last.longitude - location.coordinate.longitude)
-            if dLat < 0.01 && dLon < 0.01 {
-                return
-            }
+            if dLat < 0.01 && dLon < 0.01 { return }
         }
         lastGeocodedCoord = location.coordinate
 
-        geocoder.cancelGeocode()
+        let pm = MKPlacemark(
+            coordinate: location.coordinate,
+            addressDictionary: nil
+        )
 
-        do {
-            let placemarks = try await geocoder.reverseGeocodeLocation(location)
-            guard let place = placemarks.first else { return }
+        let city = pm.locality
+        let state = pm.administrativeArea
 
-            let city = place.locality
-            let state = place.administrativeArea
-
+        await MainActor.run {
             if let city, let state {
                 locationName = "\(city), \(state)"
             } else if let city {
@@ -95,8 +94,6 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
             } else {
                 locationName = nil
             }
-        } catch {
-            // Fail silently; forecast still works
         }
     }
 }
