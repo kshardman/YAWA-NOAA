@@ -23,7 +23,6 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     private let manager = CLLocationManager()
     private var lastGeocodedCoord: CLLocationCoordinate2D?
-    
 
     override init() {
         super.init()
@@ -219,6 +218,7 @@ final class NOAAService {
 
 // MARK: - Forecast VM
 
+
 @MainActor
 final class ForecastViewModel: ObservableObject {
     @Published var periods: [NWSForecastResponse.Period] = []
@@ -228,6 +228,7 @@ final class ForecastViewModel: ObservableObject {
 
     private let service = NOAAService()
     private var lastCoord: CLLocationCoordinate2D?
+    
 
     func loadIfNeeded(for coord: CLLocationCoordinate2D) async {
         // Prevent refetch spam from minor GPS jitter
@@ -287,11 +288,14 @@ private func forecastSymbol(for text: String, isDaytime: Bool) -> String {
 private struct DailyForecast: Identifiable {
     let id: Int
     let name: String
+    let startDate: Date        // ✅ stored date for the day
 
     let day: NWSForecastResponse.Period
     let night: NWSForecastResponse.Period?
 
-    var highText: String { "\(day.temperature)°\(day.temperatureUnit)" }
+    var highText: String {
+        "\(day.temperature)°\(day.temperatureUnit)"
+    }
 
     var lowText: String {
         if let night {
@@ -299,6 +303,13 @@ private struct DailyForecast: Identifiable {
         } else {
             return "\(day.temperature)°\(day.temperatureUnit)"
         }
+    }
+
+    // ✅ THIS is where your dateText goes
+    var dateText: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: startDate)
     }
 }
 
@@ -313,13 +324,16 @@ private func combineDayNight(_ periods: [NWSForecastResponse.Period]) -> [DailyF
             let next = (i + 1 < periods.count) ? periods[i + 1] : nil
             let night = (next?.isDaytime == false) ? next : nil
 
+            let isoFormatter = ISO8601DateFormatter()
+            let startDate = isoFormatter.date(from: p.startTime) ?? Date()
+
             out.append(DailyForecast(
                 id: p.number,
                 name: p.name,
+                startDate: startDate,
                 day: p,
                 night: night
             ))
-
             i += (night == nil ? 1 : 2)
         } else {
             // If we start on a night period for some reason, skip it
@@ -390,8 +404,15 @@ struct ForecastView: View {
             ForEach(combineDayNight(Array(vm.periods.prefix(14)))) { d in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text(d.name).font(.headline)
+                        HStack(spacing: 6) {
+                            Text(d.name)
+                                .font(.headline)
 
+                            Text(d.dateText)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        
                         Spacer()
 
                         // High / Low
