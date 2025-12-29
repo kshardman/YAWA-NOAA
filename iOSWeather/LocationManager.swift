@@ -284,6 +284,51 @@ private func forecastSymbol(for text: String, isDaytime: Bool) -> String {
     return "cloud.fill"
 }
 
+private struct DailyForecast: Identifiable {
+    let id: Int
+    let name: String
+
+    let day: NWSForecastResponse.Period
+    let night: NWSForecastResponse.Period?
+
+    var highText: String { "\(day.temperature)°\(day.temperatureUnit)" }
+
+    var lowText: String {
+        if let night {
+            return "\(night.temperature)°\(night.temperatureUnit)"
+        } else {
+            return "\(day.temperature)°\(day.temperatureUnit)"
+        }
+    }
+}
+
+private func combineDayNight(_ periods: [NWSForecastResponse.Period]) -> [DailyForecast] {
+    var out: [DailyForecast] = []
+    var i = 0
+
+    while i < periods.count {
+        let p = periods[i]
+
+        if p.isDaytime {
+            let next = (i + 1 < periods.count) ? periods[i + 1] : nil
+            let night = (next?.isDaytime == false) ? next : nil
+
+            out.append(DailyForecast(
+                id: p.number,
+                name: p.name,
+                day: p,
+                night: night
+            ))
+
+            i += (night == nil ? 1 : 2)
+        } else {
+            // If we start on a night period for some reason, skip it
+            i += 1
+        }
+    }
+
+    return out
+}
 
 struct ForecastView: View {
     @StateObject private var location = LocationManager()
@@ -324,6 +369,7 @@ struct ForecastView: View {
             default: return "info.circle.fill"
             }
         }
+        
     }
     
     
@@ -341,26 +387,32 @@ struct ForecastView: View {
                 Text(msg).foregroundStyle(.secondary)
             }
 
-            ForEach(vm.periods.prefix(14)) { p in
+            ForEach(combineDayNight(Array(vm.periods.prefix(14)))) { d in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text(p.name).font(.headline)
+                        Text(d.name).font(.headline)
+
                         Spacer()
-                        Text("\(p.temperature)°\(p.temperatureUnit)")
+
+                        // High / Low
+                        Text("\(d.highText)  \(d.lowText)")
                             .font(.headline)
                     }
 
                     HStack(spacing: 8) {
-                        Image(systemName: forecastSymbol(for: p.shortForecast, isDaytime: p.isDaytime))
+                        // Use DAY symbol (recommended)
+                        Image(systemName: forecastSymbol(for: d.day.shortForecast, isDaytime: true))
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(.blue)
                             .font(.title2)
 
-                        Text(p.shortForecast)
+                        // If you want "symbols only", delete the Text line below
+                        Text(d.day.shortForecast)
                             .foregroundStyle(.secondary)
                     }
 
-                    Text("\(p.windDirection) \(p.windSpeed)")
+                    // Optional: keep wind from DAY only (recommended) or remove entirely
+                    Text("\(d.day.windDirection) \(d.day.windSpeed)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
