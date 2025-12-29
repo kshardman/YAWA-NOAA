@@ -35,7 +35,7 @@ struct ContentView: View {
 
                     // MARK: Header (no background)
                     VStack(spacing: 10) {
-                        Text("Current Conditions")
+                        Text("Current Conditions at Home")
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.primary)
 
