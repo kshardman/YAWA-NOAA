@@ -141,7 +141,7 @@ struct ContentView: View {
 
     private func cardBackground() -> some View {
         RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .fill(Color(.secondarySystemBackground))
+            .fill(Color(.systemBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(
@@ -152,9 +152,9 @@ struct ContentView: View {
                     )
             )
             .shadow(
-                color: Color.black.opacity(scheme == .light ? 0.12 : 0.06),
-                radius: scheme == .light ? 14 : 10,
-                y: scheme == .light ? 8 : 6
+                color: Color.black.opacity(scheme == .light ? 0.10 : 0.05),
+                radius: scheme == .light ? 12 : 8,
+                y: scheme == .light ? 6 : 4
             )
     }
     
