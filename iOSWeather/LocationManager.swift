@@ -264,25 +264,52 @@ final class ForecastViewModel: ObservableObject {
 
 // MARK: - View
 
-private func forecastSymbol(for text: String, isDaytime: Bool) -> String {
+private func forecastSymbolAndColor(
+    for text: String,
+    isDaytime: Bool
+) -> (symbol: String, color: Color) {
+
     let t = text.lowercased()
 
-    if t.contains("thunder") { return "cloud.bolt.rain.fill" }
-    if t.contains("snow") { return "snowflake" }
-    if t.contains("sleet") || t.contains("ice") { return "cloud.sleet.fill" }
-    if t.contains("rain") || t.contains("showers") { return "cloud.rain.fill" }
-    if t.contains("fog") || t.contains("haze") { return "cloud.fog.fill" }
-    if t.contains("wind") { return "wind" }
+    if t.contains("thunder") {
+        return ("cloud.bolt.rain.fill", .purple)
+    }
+
+    if t.contains("snow") {
+        return ("snowflake", .cyan)
+    }
+
+    if t.contains("sleet") || t.contains("ice") {
+        return ("cloud.sleet.fill", .cyan)
+    }
+
+    if t.contains("rain") || t.contains("showers") {
+        return ("cloud.rain.fill", .blue)
+    }
+
+    if t.contains("fog") || t.contains("haze") {
+        return ("cloud.fog.fill", .gray)
+    }
+
+    if t.contains("wind") {
+        return ("wind", .gray)
+    }
 
     if t.contains("cloud") {
-        return isDaytime ? "cloud.sun.fill" : "cloud.moon.fill"
+        return (
+            isDaytime ? "cloud.sun.fill" : "cloud.moon.fill",
+            .gray
+        )
     }
 
     if t.contains("sun") || t.contains("clear") {
-        return isDaytime ? "sun.max.fill" : "moon.stars.fill"
+        return (
+            isDaytime ? "sun.max.fill" : "moon.stars.fill",
+            isDaytime ? .yellow : .secondary
+        )
     }
 
-    return "cloud.fill"
+    return ("cloud.fill", .gray)
 }
 
 private struct DailyForecast: Identifiable {
@@ -422,11 +449,16 @@ struct ForecastView: View {
 
                     HStack(spacing: 8) {
                         // Use DAY symbol (recommended)
-                        Image(systemName: forecastSymbol(for: d.day.shortForecast, isDaytime: true))
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.blue)
-                            .font(.title2)
+                        let sym = forecastSymbolAndColor(
+                            for: d.day.shortForecast,
+                            isDaytime: true
+                        )
 
+                        Image(systemName: sym.symbol)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(sym.color)
+                            .font(.title2)
+                        
                         // If you want "symbols only", delete the Text line below
                         Text(d.day.shortForecast)
                             .foregroundStyle(.secondary)
