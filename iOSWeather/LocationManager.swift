@@ -297,18 +297,19 @@ private func forecastSymbolAndColor(
         return ("cloud.fog.fill", .gray)
     }
 
-    if t.contains("wind") {
-        return ("wind", .gray)
-    }
-
-    if t.contains("cloud") {
+    // ✅ PARTLY / MOSTLY / CLOUDY — must come BEFORE sunny
+    if t.contains("partly")
+        || t.contains("mostly")
+        || t.contains("scattered")
+        || t.contains("cloud") {
         return (
             isDaytime ? "cloud.sun.fill" : "cloud.moon.fill",
             .gray
         )
     }
 
-    if t.contains("sun") || t.contains("clear") {
+    // ✅ TRUE clear only
+    if t.contains("sunny") || t.contains("clear") {
         return (
             isDaytime ? "sun.max.fill" : "moon.stars.fill",
             isDaytime ? .yellow : .secondary
