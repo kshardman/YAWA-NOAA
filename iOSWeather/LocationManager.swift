@@ -138,8 +138,15 @@ struct NWSForecastResponse: Decodable {
         let windSpeed: String
         let windDirection: String
         let shortForecast: String
+        struct QuantifiedValue: Decodable {
+                let value: Double?
+                let unitCode: String?
+            }
+
+            let probabilityOfPrecipitation: QuantifiedValue?
 
         var id: Int { number }
+        
     }
     let properties: Properties
 }
@@ -342,6 +349,14 @@ private struct DailyForecast: Identifiable {
     }
 }
 
+private func popText(_ p: NWSForecastResponse.Period) -> String? {
+    guard let v = p.probabilityOfPrecipitation?.value else { return nil }
+    let pct = Int(v.rounded())
+    // Optional: hide tiny chances to reduce clutter
+//    if pct < 20 { return nil }
+    return "\(pct)%"
+}
+
 private func combineDayNight(_ periods: [NWSForecastResponse.Period]) -> [DailyForecast] {
     var out: [DailyForecast] = []
     var i = 0
@@ -466,9 +481,22 @@ struct ForecastView: View {
                     }
 
                     // Optional: keep wind from DAY only (recommended) or remove entirely
-                    Text("\(d.day.windDirection) \(d.day.windSpeed)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        Text("\(d.day.windDirection) \(d.day.windSpeed)")
+
+                        if let pop = popText(d.day) {
+                            Text("•")
+                                .foregroundStyle(.secondary)
+
+                            Image(systemName: "drop.fill")
+                                .imageScale(.small)
+                                .foregroundStyle(.secondary)
+
+                            Text(pop)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 6)
             }
