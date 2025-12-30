@@ -446,7 +446,11 @@ struct ForecastView: View {
 
             ForEach(combineDayNight(Array(vm.periods.prefix(14)))) { d in
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack {
+
+                    // Top line: icon + day/date + high/low
+                    HStack(spacing: 10) {
+
+                        // Column 1: fixed-width day+date text (so the icon column lines up)
                         HStack(spacing: 6) {
                             Text(d.name)
                                 .font(.headline)
@@ -455,16 +459,9 @@ struct ForecastView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
-                        
-                        Spacer()
+                        .frame(width: 170, alignment: .leading)   // ✅ adjust 130–170 as needed
 
-                        // High / Low
-                        Text("H \(d.highText)  L \(d.lowText)")
-                            .font(.headline)
-                    }
-
-                    HStack(spacing: 8) {
-                        // Use DAY symbol (recommended)
+                        // Column 2: fixed-width icon column
                         let sym = forecastSymbolAndColor(
                             for: d.day.shortForecast,
                             isDaytime: true
@@ -473,15 +470,25 @@ struct ForecastView: View {
                         Image(systemName: sym.symbol)
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(sym.color)
-                            .font(.title2)
-                        
-                        // If you want "symbols only", delete the Text line below
-                        Text(d.day.shortForecast)
-                            .foregroundStyle(.secondary)
-                    }
+                            .font(.title3)
+                            .frame(width: 28, alignment: .center)
 
-                    // Optional: keep wind from DAY only (recommended) or remove entirely
+                        Spacer()
+
+                        Text("H \(d.highText)  L \(d.lowText)")
+                            .font(.headline)
+                            .monospacedDigit()
+                    }
+                    
+                    
+                    // Bottom line: wind + PoP (unchanged)
                     HStack(spacing: 10) {
+
+                        // Wind
+                        Image(systemName: "wind")
+                            .imageScale(.small)
+                            .foregroundStyle(.secondary)
+
                         Text("\(d.day.windDirection) \(d.day.windSpeed)")
 
                         if let pop = popText(d.day) {
