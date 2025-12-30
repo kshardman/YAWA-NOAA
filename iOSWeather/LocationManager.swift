@@ -357,6 +357,20 @@ private func popText(_ p: NWSForecastResponse.Period) -> String? {
     return "\(pct)%"
 }
 
+private func abbreviatedDayName(_ name: String) -> String {
+    switch name {
+    case "Monday":    return "Mon"
+    case "Tuesday":   return "Tue"
+    case "Wednesday": return "Wed"
+    case "Thursday":  return "Thu"
+    case "Friday":    return "Fri"
+    case "Saturday":  return "Sat"
+    case "Sunday":    return "Sun"
+    default:
+        return name
+    }
+}
+
 private func combineDayNight(_ periods: [NWSForecastResponse.Period]) -> [DailyForecast] {
     var out: [DailyForecast] = []
     var i = 0
@@ -452,9 +466,8 @@ struct ForecastView: View {
 
                         // Column 1: fixed-width day+date text (so the icon column lines up)
                         HStack(spacing: 6) {
-                            Text(d.name)
+                            Text(abbreviatedDayName(d.name))
                                 .font(.headline)
-
                             Text(d.dateText)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
