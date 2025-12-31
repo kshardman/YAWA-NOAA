@@ -484,7 +484,7 @@ struct ForecastView: View {
                         Image(systemName: sym.symbol)
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(sym.color)
-                            .font(.title3)
+                            .font(.title2)
                             .frame(width: 28, alignment: .center)
 
                         Spacer()
