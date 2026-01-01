@@ -1,3 +1,11 @@
+//
+//  FavoriteLocation.swift
+//  iOSWeather
+//
+//  Created by Keith Sharman on 1/1/26.
+//
+
+
 import Foundation
 import Combine
 import CoreLocation

@@ -11,6 +11,46 @@ import CoreLocation
 import Combine
 import MapKit
 
+//city search
+
+@MainActor
+final class CitySearchViewModel: ObservableObject {
+    struct Result: Identifiable {
+        let id = UUID()
+        let title: String
+        let subtitle: String
+        let coordinate: CLLocationCoordinate2D
+    }
+
+    @Published var query: String = ""
+    @Published var results: [Result] = []
+    @Published var isSearching = false
+
+    func search() async {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.count >= 2 else { results = []; return }
+
+        isSearching = true
+        defer { isSearching = false }
+
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = q
+        request.resultTypes = [.address]   // city/state hits well
+
+        do {
+            let response = try await MKLocalSearch(request: request).start()
+            results = response.mapItems.compactMap { item in
+                guard let name = item.placemark.locality ?? item.name else { return nil }
+                let state = item.placemark.administrativeArea ?? ""
+                return Result(title: name, subtitle: state, coordinate: item.placemark.coordinate)
+            }
+        } catch {
+            results = []
+        }
+    }
+}
+
+
 // MARK: - Location
 
 final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
@@ -407,6 +447,14 @@ struct ForecastView: View {
     @StateObject private var location = LocationManager()
     @StateObject private var vm = ForecastViewModel()
 
+    //
+    
+    @StateObject private var favorites = FavoritesStore()
+    @StateObject private var searchVM = CitySearchViewModel()
+
+    @State private var selected: FavoriteLocation? = nil
+    
+    
     private struct AlertBanner: View {
         let alert: NWSAlertsResponse.Feature
 
@@ -522,6 +570,121 @@ struct ForecastView: View {
                 .padding(.vertical, 6)
             }
         }
+        
+  // search bar
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 10) {
+
+                // Favorites picker row (if you have any)
+                if !favorites.favorites.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            // "Current" option
+                            Button {
+                                selected = nil
+                                location.request()
+                                // when coord updates, your existing onChange will load forecast
+                            } label: {
+                                Text("Current")
+                                    .padding(.horizontal, 12).padding(.vertical, 8)
+                                    .background(.thinMaterial)
+                                    .clipShape(Capsule())
+                            }
+
+                            ForEach(favorites.favorites) { f in
+                                Button {
+                                    selected = f
+                                    Task { await vm.refresh(for: f.coordinate) }
+                                } label: {
+                                    Text(f.displayName)
+                                        .padding(.horizontal, 12).padding(.vertical, 8)
+                                        .background(.thinMaterial)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+                }
+
+                // Search bar row
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+
+                    TextField("Search city, state", text: $searchVM.query)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .submitLabel(.search)
+                        .onSubmit { Task { await searchVM.search() } }
+
+                    if searchVM.isSearching {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(.thinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, 16)
+
+                // Search results (tap to load; star to favorite)
+                if !searchVM.results.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(searchVM.results.prefix(6)) { r in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(r.title).font(.headline)
+                                    if !r.subtitle.isEmpty {
+                                        Text(r.subtitle).font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Button {
+                                    favorites.add(FavoriteLocation(
+                                        title: r.title,
+                                        subtitle: r.subtitle,
+                                        latitude: r.coordinate.latitude,
+                                        longitude: r.coordinate.longitude
+                                    ))
+                                } label: {
+                                    Image(systemName: "star")
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    let f = FavoriteLocation(
+                                        title: r.title,
+                                        subtitle: r.subtitle,
+                                        latitude: r.coordinate.latitude,
+                                        longitude: r.coordinate.longitude
+                                    )
+                                    selected = f
+                                    Task { await vm.refresh(for: f.coordinate) }
+                                    searchVM.results = [] // collapse list after selection
+                                } label: {
+                                    Image(systemName: "arrow.right.circle.fill")
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+
+                            Divider()
+                        }
+                    }
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.horizontal, 16)
+                }
+            }
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+            .background(Color(.systemBackground).opacity(0.001)) // keeps taps working nicely
+        }
+        
         .overlay {
             if vm.isLoading && vm.periods.isEmpty {
                 ProgressView("Loading forecast…")
