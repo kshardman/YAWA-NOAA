@@ -65,6 +65,8 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     private var lastGeocodedCoord: CLLocationCoordinate2D?
     private let geocoder = CLGeocoder()
 
+    
+    
     override init() {
         super.init()
         manager.delegate = self
@@ -443,17 +445,30 @@ private func combineDayNight(_ periods: [NWSForecastResponse.Period]) -> [DailyF
     return out
 }
 
+private extension Double {
+    func rounded(toPlaces places: Int) -> Double {
+        let p = pow(10.0, Double(places))
+        return (self * p).rounded() / p
+    }
+}
+
 struct ForecastView: View {
     @StateObject private var location = LocationManager()
     @StateObject private var vm = ForecastViewModel()
 
+    
     //
     
-    @StateObject private var favorites = FavoritesStore()
     @StateObject private var searchVM = CitySearchViewModel()
-
-    @State private var selected: FavoriteLocation? = nil
     
+    @StateObject private var favorites = FavoritesStore()
+    @State private var selected: FavoriteLocation? = nil
+    @State private var showingFavorites = false
+ 
+    private var coordKey: String? {
+        guard let c = location.coordinate else { return nil }
+        return "\(c.latitude.rounded(toPlaces: 3))_\(c.longitude.rounded(toPlaces: 3))"
+    }
     
     private struct AlertBanner: View {
         let alert: NWSAlertsResponse.Feature
@@ -492,6 +507,15 @@ struct ForecastView: View {
         }
         
     }
+
+
+    private var subtitleLocationText: String {
+        if let selected {
+            return selected.displayName
+        }
+        return location.locationName ?? "Current Location"
+    }
+    
     
     var body: some View {
         List {
@@ -574,39 +598,6 @@ struct ForecastView: View {
   // search bar
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
-
-                // Favorites picker row (if you have any)
-                if !favorites.favorites.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            // "Current" option
-                            Button {
-                                selected = nil
-                                location.request()
-                                // when coord updates, your existing onChange will load forecast
-                            } label: {
-                                Text("Current")
-                                    .padding(.horizontal, 12).padding(.vertical, 8)
-                                    .background(.thinMaterial)
-                                    .clipShape(Capsule())
-                            }
-
-                            ForEach(favorites.favorites) { f in
-                                Button {
-                                    selected = f
-                                    Task { await vm.refresh(for: f.coordinate) }
-                                } label: {
-                                    Text(f.displayName)
-                                        .padding(.horizontal, 12).padding(.vertical, 8)
-                                        .background(.thinMaterial)
-                                        .clipShape(Capsule())
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                    }
-                }
-
                 // Search bar row
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
@@ -643,29 +634,23 @@ struct ForecastView: View {
                                 Spacer()
 
                                 Button {
-                                    favorites.add(FavoriteLocation(
-                                        title: r.title,
-                                        subtitle: r.subtitle,
-                                        latitude: r.coordinate.latitude,
-                                        longitude: r.coordinate.longitude
-                                    ))
-                                } label: {
-                                    Image(systemName: "star")
-                                }
-                                .buttonStyle(.plain)
-
-                                Button {
                                     let f = FavoriteLocation(
                                         title: r.title,
                                         subtitle: r.subtitle,
                                         latitude: r.coordinate.latitude,
                                         longitude: r.coordinate.longitude
                                     )
+
+                                    favorites.add(f)
                                     selected = f
+
                                     Task { await vm.refresh(for: f.coordinate) }
-                                    searchVM.results = [] // collapse list after selection
+
+                                    searchVM.query = ""
+                                    searchVM.results = []
+                                    dismissKeyboard()
                                 } label: {
-                                    Image(systemName: "arrow.right.circle.fill")
+                                    Image(systemName: "star.fill")
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -696,10 +681,79 @@ struct ForecastView: View {
                 VStack(spacing: 2) {
                     Text("7-Day Forecast")
                         .font(.headline)
-                    if let name = location.locationName {
-                        Text(name)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+
+                    Text(subtitleLocationText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingFavorites = true
+                } label: {
+                    Image(systemName: "star.circle")
+                }
+                .accessibilityLabel("Favorites")
+            }
+        }
+        .sheet(isPresented: $showingFavorites) {
+            NavigationStack {
+                List {
+                    Section {
+                        Button {
+                            selected = nil
+                            searchVM.query = ""
+                            searchVM.results = []
+                            dismissKeyboard()
+
+                            if let coord = location.coordinate {
+                                Task { await vm.refresh(for: coord) }   // ✅ force reload immediately
+                            } else {
+                                location.request()                      // ✅ ask for location if we don't have it yet
+                            }
+
+                            showingFavorites = false
+                        } label: {
+                            HStack {
+                                Text("Current Location")
+                                Spacer()
+                                if selected == nil { Image(systemName: "checkmark") }
+                            }
+                        }
+                    }
+
+                    Section("Favorites") {
+                        if favorites.favorites.isEmpty {
+                            Text("No favorites yet.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(favorites.favorites) { f in
+                                Button {
+                                    selected = f
+                                    Task { await vm.refresh(for: f.coordinate) }
+                                    showingFavorites = false
+                                } label: {
+                                    HStack {
+                                        Text(f.displayName)
+                                        Spacer()
+                                        if selected?.id == f.id { Image(systemName: "checkmark") }
+                                    }
+                                }
+                            }
+                            .onDelete { indexSet in
+                                for i in indexSet {
+                                    favorites.remove(favorites.favorites[i])
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Locations")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { showingFavorites = false }
                     }
                 }
             }
@@ -707,6 +761,11 @@ struct ForecastView: View {
         .task {
             location.request()
         }
+        .onChange(of: coordKey) { _ in
+            guard selected == nil, let coord = location.coordinate else { return }
+            Task { await vm.loadIfNeeded(for: coord) }
+        }
+        
         .onReceive(location.$coordinate) { coord in
             guard let coord else { return }
             Task { await vm.loadIfNeeded(for: coord) }

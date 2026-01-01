@@ -85,11 +85,11 @@ struct ContentView: View {
                                 .foregroundStyle(.blue)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("7-Day Forecast")
+                                Text("7-Day Forecasts")
                                     .font(.headline)
                                     .foregroundStyle(.primary)
 
-                                Text("Tap to view NOAA outlook")
+                                Text("Tap to view NOAA outlooks")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
