@@ -166,31 +166,32 @@ struct NWSPointsResponse: Decodable {
 }
 
 struct NWSForecastResponse: Decodable {
+
     struct Properties: Decodable {
         let periods: [Period]
     }
+
+    let properties: Properties
+
     struct Period: Decodable, Identifiable {
         let number: Int
+        var id: Int { number }
+
         let name: String
-        let startTime: String
-        let endTime: String
+        let startTime: Date            // ✅ ADD
         let isDaytime: Bool
         let temperature: Int
         let temperatureUnit: String
         let windSpeed: String
         let windDirection: String
         let shortForecast: String
-        struct QuantifiedValue: Decodable {
-                let value: Double?
-                let unitCode: String?
-            }
-
-            let probabilityOfPrecipitation: QuantifiedValue?
-
-        var id: Int { number }
-        
+        let detailedForecast: String?
+        let probabilityOfPrecipitation: ProbabilityOfPrecipitation?
     }
-    let properties: Properties
+
+    struct ProbabilityOfPrecipitation: Decodable {
+        let value: Double?
+    }
 }
 
 enum NOAAServiceError: Error {
@@ -259,7 +260,10 @@ final class NOAAService {
             throw NOAAServiceError.badStatus(http.statusCode)
         }
 
-        let decoded = try JSONDecoder().decode(NWSForecastResponse.self, from: forecastData)
+ //       let decoded = try JSONDecoder().decode(NWSForecastResponse.self, from: forecastData)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(NWSForecastResponse.self, from: forecastData)
         return decoded.properties.periods
     }
 }
@@ -426,8 +430,8 @@ private func combineDayNight(_ periods: [NWSForecastResponse.Period]) -> [DailyF
             let night = (next?.isDaytime == false) ? next : nil
 
             let isoFormatter = ISO8601DateFormatter()
-            let startDate = isoFormatter.date(from: p.startTime) ?? Date()
-
+//            let startDate = isoFormatter.date(from: p.startTime) ?? Date()
+            let startDate = p.startTime
             out.append(DailyForecast(
                 id: p.number,
                 name: p.name,
@@ -453,23 +457,39 @@ private extension Double {
 }
 
 struct ForecastView: View {
+
+    // MARK: - State
     @StateObject private var location = LocationManager()
     @StateObject private var vm = ForecastViewModel()
-
-    
-    //
-    
     @StateObject private var searchVM = CitySearchViewModel()
-    
     @StateObject private var favorites = FavoritesStore()
+
     @State private var selected: FavoriteLocation? = nil
     @State private var showingFavorites = false
- 
+    @State private var selectedDetail: DetailPayload?
+
+    // MARK: - Detail payload
+    private struct DetailPayload: Identifiable {
+        let id = UUID()
+        let title: String
+        let body: String
+    }
+
+    // MARK: - Coordinate key (Equatable)
     private var coordKey: String? {
         guard let c = location.coordinate else { return nil }
         return "\(c.latitude.rounded(toPlaces: 3))_\(c.longitude.rounded(toPlaces: 3))"
     }
-    
+
+    // MARK: - Toolbar subtitle
+    private var subtitleLocationText: String {
+        if let selected {
+            return selected.displayName
+        }
+        return location.locationName ?? "Current Location"
+    }
+
+    // MARK: - Alert banner
     private struct AlertBanner: View {
         let alert: NWSAlertsResponse.Feature
 
@@ -478,10 +498,8 @@ struct ForecastView: View {
                 HStack(spacing: 8) {
                     Image(systemName: symbolForSeverity(alert.properties.severity))
                         .foregroundStyle(.orange)
-
                     Text(alert.properties.event)
                         .font(.headline)
-
                     Spacer()
                 }
 
@@ -505,39 +523,34 @@ struct ForecastView: View {
             default: return "info.circle.fill"
             }
         }
-        
     }
 
-
-    private var subtitleLocationText: String {
-        if let selected {
-            return selected.displayName
-        }
-        return location.locationName ?? "Current Location"
-    }
-    
-    
+    // MARK: - Body
     var body: some View {
         List {
+
             if let top = vm.alerts.first {
                 Section {
                     AlertBanner(alert: top)
                 }
             }
+
             if let msg = location.errorMessage {
                 Text(msg).foregroundStyle(.secondary)
             }
+
             if let msg = vm.errorMessage {
                 Text(msg).foregroundStyle(.secondary)
             }
 
             ForEach(combineDayNight(Array(vm.periods.prefix(14)))) { d in
+                let sym = forecastSymbolAndColor(for: d.day.shortForecast, isDaytime: true)
+
                 VStack(alignment: .leading, spacing: 6) {
 
-                    // Top line: icon + day/date + high/low
+                    // Top row
                     HStack(spacing: 10) {
 
-                        // Column 1: fixed-width day+date text (so the icon column lines up)
                         HStack(spacing: 6) {
                             Text(abbreviatedDayName(d.name))
                                 .font(.headline)
@@ -545,19 +558,13 @@ struct ForecastView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
-                        .frame(width: 170, alignment: .leading)   // ✅ adjust 130–170 as needed
-
-                        // Column 2: fixed-width icon column
-                        let sym = forecastSymbolAndColor(
-                            for: d.day.shortForecast,
-                            isDaytime: true
-                        )
+                        .frame(width: 170, alignment: .leading)
 
                         Image(systemName: sym.symbol)
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(sym.color)
                             .font(.title2)
-                            .frame(width: 28, alignment: .center)
+                            .frame(width: 28)
 
                         Spacer()
 
@@ -565,12 +572,9 @@ struct ForecastView: View {
                             .font(.headline)
                             .monospacedDigit()
                     }
-                    
-                    
-                    // Bottom line: wind + PoP (unchanged)
-                    HStack(spacing: 10) {
 
-                        // Wind
+                    // Bottom row
+                    HStack(spacing: 10) {
                         Image(systemName: "wind")
                             .imageScale(.small)
                             .foregroundStyle(.secondary)
@@ -578,27 +582,42 @@ struct ForecastView: View {
                         Text("\(d.day.windDirection) \(d.day.windSpeed)")
 
                         if let pop = popText(d.day) {
-                            Text("•")
-                                .foregroundStyle(.secondary)
-
+                            Text("•").foregroundStyle(.secondary)
                             Image(systemName: "drop.fill")
                                 .imageScale(.small)
                                 .foregroundStyle(.secondary)
-
                             Text(pop)
                         }
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    let dayText = d.day.detailedForecast ?? d.day.shortForecast
+                    let nightText = d.night?.detailedForecast
+
+                    let body: String
+                    if let nightText,
+                       !nightText.isEmpty,
+                       nightText != dayText {
+                        body = "Day: \(dayText)\n\nNight: \(nightText)"
+                    } else {
+                        body = dayText
+                    }
+
+                    selectedDetail = DetailPayload(
+                        title: "\(abbreviatedDayName(d.name)) \(d.dateText)",
+                        body: body
+                    )
+                }
                 .padding(.vertical, 6)
             }
         }
-        
-  // search bar
+
+        // MARK: - Search bar (bottom)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
-                // Search bar row
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
@@ -616,10 +635,9 @@ struct ForecastView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(.thinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
                 .padding(.horizontal, 16)
 
-                // Search results (tap to load; star to favorite)
                 if !searchVM.results.isEmpty {
                     VStack(spacing: 0) {
                         ForEach(searchVM.results.prefix(6)) { r in
@@ -627,7 +645,9 @@ struct ForecastView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(r.title).font(.headline)
                                     if !r.subtitle.isEmpty {
-                                        Text(r.subtitle).font(.subheadline).foregroundStyle(.secondary)
+                                        Text(r.subtitle)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
                                     }
                                 }
 
@@ -643,7 +663,6 @@ struct ForecastView: View {
 
                                     favorites.add(f)
                                     selected = f
-
                                     Task { await vm.refresh(for: f.coordinate) }
 
                                     searchVM.query = ""
@@ -661,27 +680,28 @@ struct ForecastView: View {
                         }
                     }
                     .background(.thinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal, 16)
                 }
             }
             .padding(.top, 10)
             .padding(.bottom, 10)
-            .background(Color(.systemBackground).opacity(0.001)) // keeps taps working nicely
         }
-        
+
+        // MARK: - Loading overlay
         .overlay {
             if vm.isLoading && vm.periods.isEmpty {
                 ProgressView("Loading forecast…")
             }
         }
+
+        // MARK: - Toolbar
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 2) {
-                    Text("7-Day Forecast")
+                    Text("Forecasts")
                         .font(.headline)
-
                     Text(subtitleLocationText)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -694,9 +714,10 @@ struct ForecastView: View {
                 } label: {
                     Image(systemName: "star.circle")
                 }
-                .accessibilityLabel("Favorites")
             }
         }
+
+        // MARK: - Favorites sheet
         .sheet(isPresented: $showingFavorites) {
             NavigationStack {
                 List {
@@ -708,9 +729,9 @@ struct ForecastView: View {
                             dismissKeyboard()
 
                             if let coord = location.coordinate {
-                                Task { await vm.refresh(for: coord) }   // ✅ force reload immediately
+                                Task { await vm.refresh(for: coord) }
                             } else {
-                                location.request()                      // ✅ ask for location if we don't have it yet
+                                location.request()
                             }
 
                             showingFavorites = false
@@ -718,7 +739,9 @@ struct ForecastView: View {
                             HStack {
                                 Text("Current Location")
                                 Spacer()
-                                if selected == nil { Image(systemName: "checkmark") }
+                                if selected == nil {
+                                    Image(systemName: "checkmark")
+                                }
                             }
                         }
                     }
@@ -737,7 +760,9 @@ struct ForecastView: View {
                                     HStack {
                                         Text(f.displayName)
                                         Spacer()
-                                        if selected?.id == f.id { Image(systemName: "checkmark") }
+                                        if selected?.id == f.id {
+                                            Image(systemName: "checkmark")
+                                        }
                                     }
                                 }
                             }
@@ -758,16 +783,33 @@ struct ForecastView: View {
                 }
             }
         }
+
+        // MARK: - Detail forecast sheet
+        .sheet(item: $selectedDetail) { detail in
+            NavigationStack {
+                ScrollView {
+                    Text(detail.body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                }
+                .navigationTitle(detail.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { selectedDetail = nil }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+
+        // MARK: - Lifecycle
         .task {
             location.request()
         }
         .onChange(of: coordKey) { _ in
             guard selected == nil, let coord = location.coordinate else { return }
-            Task { await vm.loadIfNeeded(for: coord) }
-        }
-        
-        .onReceive(location.$coordinate) { coord in
-            guard let coord else { return }
             Task { await vm.loadIfNeeded(for: coord) }
         }
         .refreshable {
