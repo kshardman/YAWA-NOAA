@@ -398,10 +398,9 @@ private struct DailyForecast: Identifiable {
 
 private func popText(_ p: NWSForecastResponse.Period) -> String? {
     guard let v = p.probabilityOfPrecipitation?.value else { return nil }
-    let pct = Int(v.rounded())
-    // Optional: hide tiny chances to reduce clutter
-//    if pct < 20 { return nil }
-    return "\(pct)%"
+    let roundedTo10 = Int((v / 10.0).rounded() * 10.0)
+    guard roundedTo10 > 0 else { return nil }   // hide 0%
+    return "\(roundedTo10)%"
 }
 
 private func abbreviatedDayName(_ name: String) -> String {
@@ -468,6 +467,8 @@ struct ForecastView: View {
     @State private var showingFavorites = false
     @State private var selectedDetail: DetailPayload?
 
+    private let sideColumnWidth: CGFloat = 130
+    
     // MARK: - Detail payload
     private struct DetailPayload: Identifiable {
         let id = UUID()
@@ -494,7 +495,7 @@ struct ForecastView: View {
         let alert: NWSAlertsResponse.Feature
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     Image(systemName: symbolForSeverity(alert.properties.severity))
                         .foregroundStyle(.orange)
@@ -513,7 +514,7 @@ struct ForecastView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 3)
         }
 
         private func symbolForSeverity(_ severity: String?) -> String {
@@ -551,6 +552,7 @@ struct ForecastView: View {
                     // Top row
                     HStack(spacing: 10) {
 
+                        // Left column (fixed)
                         HStack(spacing: 6) {
                             Text(abbreviatedDayName(d.name))
                                 .font(.headline)
@@ -558,40 +560,30 @@ struct ForecastView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
-                        .frame(width: 170, alignment: .leading)
+                        .frame(width: sideColumnWidth, alignment: .leading)
 
-                        Image(systemName: sym.symbol)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(sym.color)
-                            .font(.title2)
-                            .frame(width: 28)
+                        // Middle column (exact center)
+                        VStack(spacing: 3) {
+                            Image(systemName: sym.symbol)
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(sym.color)
+                                .font(.title2)
 
-                        Spacer()
+                            if let pop = popText(d.day) {
+                                Text(pop)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
 
+                        // Right column (fixed, matches left)
                         Text("H \(d.highText)  L \(d.lowText)")
                             .font(.headline)
                             .monospacedDigit()
-                    }
-
-                    // Bottom row
-                    HStack(spacing: 10) {
-                        Image(systemName: "wind")
-                            .imageScale(.small)
-                            .foregroundStyle(.secondary)
-
-                        Text("\(d.day.windDirection) \(d.day.windSpeed)")
-
-                        if let pop = popText(d.day) {
-                            Text("•").foregroundStyle(.secondary)
-                            Image(systemName: "drop.fill")
-                                .imageScale(.small)
-                                .foregroundStyle(.secondary)
-                            Text(pop)
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
+                            .frame(width: sideColumnWidth, alignment: .trailing)
+                    }                }
                 .contentShape(Rectangle())
                 .onTapGesture {
                     let dayText = d.day.detailedForecast ?? d.day.shortForecast
