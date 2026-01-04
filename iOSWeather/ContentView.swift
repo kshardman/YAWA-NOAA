@@ -25,6 +25,9 @@ struct ContentView: View {
 
     // Manual refresh UI state (spinner + “Refreshing…”)
     @State private var isManualRefreshing = false
+    private var tileBackground: some ShapeStyle {
+        Color(.secondarySystemBackground)
+    }
     var body: some View {
         ZStack {
             Color(.systemBackground).ignoresSafeArea()
@@ -62,12 +65,23 @@ struct ContentView: View {
 
                     // MARK: Tiles (white, black text)
                     VStack(spacing: 14) {
+
+                        // Row 1: Temperature (bigger / attention-grabbing)
+                        tile(
+                            "thermometer",
+                            .red,
+                            viewModel.temp,
+                            "Temp",
+                            valueFont: .system(size: 44, weight: .semibold)
+                        )
+                        // Row 2: Wind + Pressure
                         HStack(spacing: 14) {
-                            tile("thermometer", .red, viewModel.temp, "Temp")
                             tile("wind", .teal, viewModel.windDisplay, "Wind")
                             tile("gauge", .orange, viewModel.pressure, "Pressure")
                         }
 
+
+                        // Row 3: Humidity + Rain
                         HStack(spacing: 14) {
                             wideTile("drop", .blue, viewModel.humidity, "Humidity")
                             wideTile("cloud.rain", .blue, viewModel.precipitation, "Rain today")
@@ -78,26 +92,33 @@ struct ContentView: View {
                     NavigationLink {
                         ForecastView()
                     } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "calendar")
-                                .font(.title3)
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(.blue)
+                        ZStack {
+                            // Centered content
+                            HStack(spacing: 12) {
+                                Image(systemName: "calendar")
+                                    .font(.title3)
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(.blue)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("7-Day Forecasts")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
+                                VStack(alignment: .center, spacing: 2) {
+                                    Text("7-Day Forecasts")
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
 
-                                Text("Tap to view NOAA outlooks")
-                                    .font(.subheadline)
+                                    Text("Tap to view NOAA outlooks")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .center)
+
+                            // Right chevron overlay
+                            HStack {
+                                Spacer()
+                                Image(systemName: "chevron.right")
                                     .foregroundStyle(.secondary)
                             }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.secondary)
                         }
                         .padding(14)
                         .frame(maxWidth: .infinity, minHeight: 72)
@@ -173,58 +194,58 @@ struct ContentView: View {
         .clipShape(Capsule())
     }
 
-    private func tile(_ icon: String, _ color: Color, _ value: String, _ label: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
+    func tile(
+        _ systemImage: String,
+        _ color: Color,
+        _ value: String,
+        _ label: String,
+        valueFont: Font = .title3
+    ) -> some View {
+        VStack(alignment: .center, spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(color)
                 .font(.title2)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(color, .primary)
 
             Text(value)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
+                .font(valueFont)
                 .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .multilineTextAlignment(.center)
 
             Text(label)
                 .font(.caption)
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, minHeight: 124)
-        .background(cardBackground())
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
     }
 
-    private func wideTile(_ icon: String, _ color: Color, _ value: String, _ label: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
+    func wideTile(
+        _ systemImage: String,
+        _ color: Color,
+        _ value: String,
+        _ label: String
+    ) -> some View {
+        VStack(alignment: .center, spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(color)
                 .font(.title2)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(color, .primary)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(value)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+            Text(value)
+                .font(.title2)
+                .monospacedDigit()
 
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(Color.secondary)
-            }
-
-            Spacer()
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 92)
-        .background(cardBackground())
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding()
+        .background(tileBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
