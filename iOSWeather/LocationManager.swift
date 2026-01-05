@@ -687,7 +687,7 @@ struct ForecastView: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.vertical, 8)
                 .background(.thinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .padding(.horizontal, 16)
@@ -731,7 +731,7 @@ struct ForecastView: View {
                                 .buttonStyle(.plain)
                             }
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
+                            .padding(.vertical, 8)
 
                             Divider()
                         }

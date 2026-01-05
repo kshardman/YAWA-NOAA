@@ -14,6 +14,20 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var scheme
 
+    @Environment(\.dynamicTypeSize) private var dyn
+
+    private var isA11y: Bool { dyn.isAccessibilitySize }
+
+    private var miniMinHeight: CGFloat { isA11y ? 84 : 68 }
+    private var bigMinHeight: CGFloat { isA11y ? 190 : 150 }
+
+    private var miniValueFont: Font { isA11y ? .title3.weight(.semibold) : .headline }
+    private var miniIconFont: Font { isA11y ? .title3 : .headline }
+
+    private var tempFontSize: CGFloat { isA11y ? 54 : 48 }
+    private var tempIconFont: Font { isA11y ? .title2 : .title3 }
+
+    
     // Manual refresh UI state (spinner + “Refreshing…”)
     @State private var isManualRefreshing = false
 
@@ -119,35 +133,68 @@ struct ContentView: View {
                         }
 
                         // MARK: Tiles
-                        VStack(spacing: 14) {
+                        // MARK: Tiles (compact 3-across layout)
+                        HStack(spacing: 14) {
 
-                            // Row 1: Temperature (big)
-                            tile(
-                                "thermometer",
-                                .red,
-                                viewModel.temp,
-                                "Temp",
-                                valueFont: .system(size: 44, weight: .semibold)
+                            // LEFT column: Wind + Humidity
+                            VStack(spacing: 14) {
+                                miniTile(
+                                    systemImage: "wind",
+                                    color: .teal,
+                                    value: viewModel.windDisplay,
+                                    accessibilityLabel: "Wind \(viewModel.windDisplay)"
+                                )
+
+                                miniTile(
+                                    systemImage: "drop",
+                                    color: .blue,
+                                    value: viewModel.humidity,
+                                    accessibilityLabel: "Humidity \(viewModel.humidity)"
+                                )
+                            }
+                            .frame(maxWidth: .infinity)
+
+                            // CENTER: Temperature (big)
+                            bigTempTile(
+                                systemImage: "thermometer",
+                                color: .red,
+                                value: viewModel.temp,
+                                accessibilityLabel: "Temperature \(viewModel.temp)"
                             )
+                            .frame(maxWidth: .infinity)
 
-                            // Row 2: Wind + Conditions/Rain
-                            HStack(spacing: 14) {
-                                tile("wind", .teal, viewModel.windDisplay, "Wind")
+                            // RIGHT column: Conditions + Pressure
+                            VStack(spacing: 14) {
 
                                 if source == .noaa {
-                                    let isNightNow = isNightHourNow()
-                                    let sym = conditionsSymbolAndColor(for: viewModel.conditions, isNight: isNightNow)
-                                    tile(sym.symbol, sym.color, viewModel.conditions, "Conditions")
-                                } else {
-                                    tile("cloud.rain", .blue, viewModel.precipitation, "Rain today")
-                                }
-                            }
+                                    let hour = Calendar.current.component(.hour, from: Date())
+                                    let isNight = hour < 6 || hour >= 18
+                                    let sym = conditionsSymbolAndColor(for: viewModel.conditions, isNight: isNight)
 
-                            // Row 3: Humidity + Pressure
-                            HStack(spacing: 14) {
-                                wideTile("drop", .blue, viewModel.humidity, "Humidity")
-                                wideTile("gauge", .orange, viewModel.pressure, "Pressure")
+                                    miniTile(
+                                        systemImage: sym.symbol,
+                                        color: sym.color,
+                                        value: viewModel.conditions,
+                                        accessibilityLabel: "Conditions \(viewModel.conditions)",
+                                        allowTwoLines: true
+                                    )
+                                } else {
+                                    miniTile(
+                                        systemImage: "cloud.rain",
+                                        color: .blue,
+                                        value: viewModel.precipitation,
+                                        accessibilityLabel: "Rain today \(viewModel.precipitation)"
+                                    )
+                                }
+
+                                miniTile(
+                                    systemImage: "gauge",
+                                    color: .orange,
+                                    value: viewModel.pressure,
+                                    accessibilityLabel: "Pressure \(viewModel.pressure)"
+                                )
                             }
+                            .frame(maxWidth: .infinity)
                         }
 
                         // MARK: Forecast card
@@ -420,6 +467,71 @@ struct ContentView: View {
         )
     }
 
+    private func miniTile(
+        systemImage: String,
+        color: Color,
+        value: String,
+        accessibilityLabel: String,
+        allowTwoLines: Bool = false
+    ) -> some View {
+        VStack(spacing: isA11y ? 10 : 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(color)
+                .font(miniIconFont)
+
+            Text(value)
+                .font(miniValueFont)
+                .monospacedDigit()
+                .multilineTextAlignment(.center)
+                .lineLimit(allowTwoLines ? 2 : 1)
+                .minimumScaleFactor(isA11y ? 0.65 : 0.75)
+        }
+        .frame(maxWidth: .infinity, minHeight: miniMinHeight)
+        .padding(.vertical, isA11y ? 10 : 8)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func bigTempTile(
+        systemImage: String,
+        color: Color,
+        value: String,
+        accessibilityLabel: String
+    ) -> some View {
+        VStack(spacing: 0) {
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: isA11y ? 12 : 10) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(color)
+                    .font(tempIconFont)
+
+                Text(value)
+                    .font(.system(size: tempFontSize, weight: .semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .offset(y: -2)   // 👈 HERE (try -1 or -2)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: bigMinHeight)
+        .padding(.vertical, isA11y ? 14 : 10)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
+    
     private func wideTile(
         _ systemImage: String,
         _ color: Color,
