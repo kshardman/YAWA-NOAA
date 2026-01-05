@@ -33,6 +33,8 @@ final class WeatherViewModel: ObservableObject {
     @Published var lastUpdated: Date?
     @Published var errorMessage: String? = nil
     @Published var conditions: String = "—"
+    @Published var noaaStationName: String = ""
+    @Published var noaaStationId: String = ""
 
     // MARK: - Numeric values (logic/theme-facing)
 
@@ -48,11 +50,25 @@ final class WeatherViewModel: ObservableObject {
     @Published var lastSuccess: Date?
     @Published private(set) var isFetching = false
     @Published var isRefreshingUI: Bool = false
+    
+    @Published var noaaStationID: String = ""   // DEBUG
+    
     private var pendingForceRefresh = false
     private var activeFetchTask: Task<Bool, Never>?
 
     private let service = WeatherService()
     private let noaaCurrent = NOAACurrentConditionsService()
+   
+    /// True when one or more key tiles are missing/unknown
+    var isNOAADataPartial: Bool {
+        // Any tile showing placeholder / missing data
+        temp == "—" ||
+        humidity == "—" ||
+        windDisplay == "—" ||
+        pressure == "—" ||
+        conditions.isEmpty
+    }
+  
     
     var windDisplay: String {
         let windValue = extractInt(from: wind)
@@ -199,6 +215,8 @@ final class WeatherViewModel: ObservableObject {
     func fetchCurrentFromNOAA(lat: Double, lon: Double, locationName: String? = nil) async {
         do {
             let result = try await noaaCurrent.fetchLatestObservation(lat: lat, lon: lon)
+            noaaStationID = result.stationId
+            noaaStationName = result.stationName ?? ""
             let o = result.obs
 
             // Temperature (degC -> F)

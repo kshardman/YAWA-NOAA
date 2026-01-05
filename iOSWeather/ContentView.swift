@@ -83,14 +83,22 @@ struct ContentView: View {
                                         return viewModel.pwsLabel.isEmpty
                                             ? "Personal Weather Station"
                                             : "\(viewModel.pwsLabel) • PWS"
-                                    } else {
-                                        return selection.selectedFavorite?.displayName
-                                            ?? viewModel.currentLocationLabel
                                     }
-                                }()
 
-                                let showCurrentLocationGlyph =
-                                    source == .noaa && selection.selectedFavorite == nil
+                                    // NOAA path
+                                    let base = selection.selectedFavorite?.displayName
+                                        ?? viewModel.currentLocationLabel
+
+                                    let isCurrentGPS = (selection.selectedFavorite == nil)
+
+                                    if isCurrentGPS,
+                                       viewModel.isNOAADataPartial,
+                                       !viewModel.noaaStationID.isEmpty {
+                                        return "\(base) • \(viewModel.noaaStationID)"
+                                    }
+
+                                    return base
+                                }()
 
                                 if !headerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                     HStack(spacing: 6) {
@@ -98,16 +106,13 @@ struct ContentView: View {
                                             .font(.subheadline)
                                             .foregroundStyle(.secondary)
 
-                                        if showCurrentLocationGlyph {
+                                        // GPS glyph only for current-location NOAA
+                                        if selection.selectedFavorite == nil && source == .noaa {
                                             Image(systemName: "location.circle")
                                                 .imageScale(.small)
                                                 .foregroundStyle(.secondary)
                                         }
                                     }
-                                } else {
-                                    Text("Current Location")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
                                 }
                             }
 

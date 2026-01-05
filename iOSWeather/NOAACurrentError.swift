@@ -27,7 +27,11 @@ final class NOAACurrentConditionsService {
     }
 
     // Main entrypoint: fetch the latest observation near a coordinate
-    func fetchLatestObservation(lat: Double, lon: Double) async throws -> (stationName: String?, stationId: String, obs: NWSLatestObservationResponse.Properties) {
+
+    func fetchLatestObservation(
+        lat: Double,
+        lon: Double
+    ) async throws -> (stationName: String?, stationId: String, obs: NWSLatestObservationResponse.Properties) {
 
         // 1) points endpoint -> observationStations URL
         let pointsURL = try makeURL("https://api.weather.gov/points/\(lat),\(lon)")
@@ -48,12 +52,49 @@ final class NOAACurrentConditionsService {
         try validate(stationsResp)
 
         let stations = try JSONDecoder().decode(NWSStationsResponse.self, from: stationsData)
-        guard let first = stations.features.first else { throw NOAACurrentError.noStations }
+        guard !stations.features.isEmpty else { throw NOAACurrentError.noStations }
 
+        // 3) try a handful of stations and pick the first "good" one
+        let candidates = stations.features.prefix(8)
+
+        for s in candidates {
+            let stationId = s.properties.stationIdentifier
+            let stationName = s.properties.name
+
+            let latestURL = try makeURL("https://api.weather.gov/stations/\(stationId)/observations/latest")
+            var latestReq = URLRequest(url: latestURL)
+            applyNOAAHeaders(&latestReq)
+
+            do {
+                let (latestData, latestResp) = try await session.data(for: latestReq)
+                try validate(latestResp)
+
+                let decoded = try JSONDecoder().decode(NWSLatestObservationResponse.self, from: latestData)
+                let o = decoded.properties
+
+                // Define "good enough" for your tiles.
+                // You can tweak this: temp+pressure+humidity covers most of your UI.
+                let hasTemp = (o.temperature?.value != nil)
+                let hasHumidity = (o.relativeHumidity?.value != nil)
+                let hasPressure = (o.barometricPressure?.value != nil)
+
+                if hasTemp && hasHumidity && hasPressure {
+                    return (stationName: stationName, stationId: stationId, obs: o)
+                }
+
+                // If you want: accept partials but keep looking for better
+                // (do nothing; continue)
+            } catch {
+                // station failed; try next one
+                continue
+            }
+        }
+
+        // If none were "good", fall back to the first station’s latest (or throw)
+        let first = stations.features[0]
         let stationId = first.properties.stationIdentifier
         let stationName = first.properties.name
 
-        // 3) latest observation from that station
         let latestURL = try makeURL("https://api.weather.gov/stations/\(stationId)/observations/latest")
         var latestReq = URLRequest(url: latestURL)
         applyNOAAHeaders(&latestReq)
@@ -62,7 +103,6 @@ final class NOAACurrentConditionsService {
         try validate(latestResp)
 
         let decoded = try JSONDecoder().decode(NWSLatestObservationResponse.self, from: latestData)
-
         return (stationName: stationName, stationId: stationId, obs: decoded.properties)
     }
 
