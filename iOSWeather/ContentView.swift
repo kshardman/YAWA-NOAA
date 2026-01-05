@@ -1,6 +1,5 @@
 import SwiftUI
 import Combine
-import UIKit
 import CoreLocation
 
 struct ContentView: View {
@@ -8,38 +7,28 @@ struct ContentView: View {
     @StateObject private var viewModel = WeatherViewModel()
     @StateObject private var location = LocationManager()
 
+    @StateObject private var searchVM = CitySearchViewModel()
+    
+    // Forecast VM for inline daily forecast list
+    @StateObject private var forecastVM = ForecastViewModel()
+
     @EnvironmentObject private var favorites: FavoritesStore
     @EnvironmentObject private var selection: LocationSelectionStore
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var scheme
-
     @Environment(\.dynamicTypeSize) private var dyn
 
-    private var isA11y: Bool { dyn.isAccessibilitySize }
-
-    private var miniMinHeight: CGFloat { isA11y ? 84 : 68 }
-    private var bigMinHeight: CGFloat { isA11y ? 190 : 150 }
-
-    private var miniValueFont: Font { isA11y ? .title3.weight(.semibold) : .headline }
-    private var miniIconFont: Font { isA11y ? .title3 : .headline }
-
-    private var tempFontSize: CGFloat { isA11y ? 54 : 48 }
-    private var tempIconFont: Font { isA11y ? .title2 : .title3 }
-
-    
-    // Manual refresh UI state (spinner + “Refreshing…”)
+    // Manual refresh UI state
     @State private var isManualRefreshing = false
 
     // Sheets
     @State private var showingSettings = false
     @State private var showingLocations = false
 
-    // When we auto-force NOAA because user picked a favorite while in PWS mode,
-    // we’ll restore the previous mode when they go back to “Current Location”.
+    // When picking a favorite we force NOAA, but we remember what user had selected
     @State private var previousSourceRaw: String? = nil
 
-    // Settings source picker
     @AppStorage("currentConditionsSource")
     private var sourceRaw: String = CurrentConditionsSource.noaa.rawValue
 
@@ -48,296 +37,431 @@ struct ContentView: View {
         set { sourceRaw = newValue.rawValue }
     }
 
-    // MARK: - Header derived values (avoid `let` inside ViewBuilder)
-    private var headerLocationText: String {
-        selection.selectedFavorite?.displayName ?? viewModel.currentLocationLabel
-    }
+    private var isA11y: Bool { dyn.isAccessibilitySize }
 
-    private var showCurrentLocationGlyph: Bool {
-        // Only show location.circle when we are using GPS-driven NOAA,
-        // not when a favorite is selected, and not for PWS mode.
-        selection.selectedFavorite == nil && source == .noaa
-    }
+    // Heights adapt automatically (about ~20% shorter than your older tiles)
+    private var miniMinHeight: CGFloat { isA11y ? 84 : 68 }
+    private var bigMinHeight: CGFloat { isA11y ? 190 : 150 }
+
+    // Font tuning
+    private var miniValueFont: Font { isA11y ? .title3.weight(.semibold) : .headline }
+    private var miniIconFont: Font { isA11y ? .title3 : .headline }
+
+    private var tempFontSize: CGFloat { isA11y ? 54 : 48 }
+    private var tempIconFont: Font { isA11y ? .title2 : .title3 }
 
     private var tileBackground: some ShapeStyle {
         Color(.secondarySystemBackground)
     }
 
+    private var headerLocationText: String {
+        if source == .pws { return "" } // don’t show stale NOAA location in PWS mode
+        return selection.selectedFavorite?.displayName ?? viewModel.currentLocationLabel
+    }
+
+    private var showCurrentLocationGlyph: Bool {
+        (source == .noaa) && (selection.selectedFavorite == nil)
+    }
+
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(.systemBackground).ignoresSafeArea()
+        ZStack {
+            Color(.systemBackground).ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 18) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 18) {
 
-                        // MARK: Header
-                        VStack(spacing: 10) {
-                            VStack(spacing: 2) {
-                                Text("Current Conditions")
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundStyle(.primary)
+                    headerSection
 
-                                let headerText: String = {
-                                    if source == .pws {
-                                        return viewModel.pwsLabel.isEmpty
-                                            ? "Personal Weather Station"
-                                            : "\(viewModel.pwsLabel) • PWS"
-                                    }
+                    tilesSection
 
-                                    // NOAA path
-                                    let base = selection.selectedFavorite?.displayName
-                                        ?? viewModel.currentLocationLabel
-
-                                    let isCurrentGPS = (selection.selectedFavorite == nil)
-
-                                    if isCurrentGPS,
-                                       viewModel.isNOAADataPartial,
-                                       !viewModel.noaaStationID.isEmpty {
-                                        return "\(base) • \(viewModel.noaaStationID)"
-                                    }
-
-                                    return base
-                                }()
-
-                                if !headerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    HStack(spacing: 6) {
-                                        Text(headerText)
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-
-                                        // GPS glyph only for current-location NOAA
-                                        if selection.selectedFavorite == nil && source == .noaa {
-                                            Image(systemName: "location.circle")
-                                                .imageScale(.small)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                }
-                            }
-
-                            UpdatedStatusRow(
-                                text: isManualRefreshing ? "Refreshing…" : viewModel.lastUpdatedText,
-                                isRefreshing: isManualRefreshing,
-                                color: .secondary
-                            )
-                            .animation(.easeInOut(duration: 0.25), value: isManualRefreshing)
-                            .animation(.easeInOut(duration: 0.25), value: viewModel.lastUpdated)
-
-                            if !networkMonitor.isOnline {
-                                pill("Offline — showing last update", "wifi.slash")
-                            }
-
-                            if let msg = viewModel.errorMessage {
-                                pill(msg, "exclamationmark.triangle.fill")
-                            }
-
-                            if viewModel.isStale {
-                                pill("STALE", "clock.badge.exclamationmark")
-                            }
-                        }
-
-                        // MARK: Tiles
-                        // MARK: Tiles (compact 3-across layout)
-                        HStack(spacing: 14) {
-
-                            // LEFT column: Wind + Humidity
-                            VStack(spacing: 14) {
-                                miniTile(
-                                    systemImage: "wind",
-                                    color: .teal,
-                                    value: viewModel.windDisplay,
-                                    accessibilityLabel: "Wind \(viewModel.windDisplay)"
-                                )
-
-                                miniTile(
-                                    systemImage: "drop",
-                                    color: .blue,
-                                    value: viewModel.humidity,
-                                    accessibilityLabel: "Humidity \(viewModel.humidity)"
-                                )
-                            }
-                            .frame(maxWidth: .infinity)
-
-                            // CENTER: Temperature (big)
-                            bigTempTile(
-                                systemImage: "thermometer",
-                                color: .red,
-                                value: viewModel.temp,
-                                accessibilityLabel: "Temperature \(viewModel.temp)"
-                            )
-                            .frame(maxWidth: .infinity)
-
-                            // RIGHT column: Conditions + Pressure
-                            VStack(spacing: 14) {
-
-                                if source == .noaa {
-                                    let hour = Calendar.current.component(.hour, from: Date())
-                                    let isNight = hour < 6 || hour >= 18
-                                    let sym = conditionsSymbolAndColor(for: viewModel.conditions, isNight: isNight)
-
-                                    miniTile(
-                                        systemImage: sym.symbol,
-                                        color: sym.color,
-                                        value: viewModel.conditions,
-                                        accessibilityLabel: "Conditions \(viewModel.conditions)",
-                                        allowTwoLines: true
-                                    )
-                                } else {
-                                    miniTile(
-                                        systemImage: "cloud.rain",
-                                        color: .blue,
-                                        value: viewModel.precipitation,
-                                        accessibilityLabel: "Rain today \(viewModel.precipitation)"
-                                    )
-                                }
-
-                                miniTile(
-                                    systemImage: "gauge",
-                                    color: .orange,
-                                    value: viewModel.pressure,
-                                    accessibilityLabel: "Pressure \(viewModel.pressure)"
-                                )
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-
-                        // MARK: Forecast card
-                        NavigationLink {
-                            ForecastView(initialSelection: selection.selectedFavorite)
-                        } label: {
-                            ZStack {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "calendar")
-                                        .font(.title3)
-                                        .symbolRenderingMode(.hierarchical)
-                                        .foregroundStyle(.blue)
-
-                                    VStack(alignment: .center, spacing: 2) {
-                                        Text("Daily Forecast")
-                                            .font(.headline)
-                                            .foregroundStyle(.primary)
-
-                                        Text("Tap to view NOAA outlooks")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .multilineTextAlignment(.center)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .center)
-
-                                HStack {
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(14)
-                            .frame(maxWidth: .infinity, minHeight: 72)
-                            .background(cardBackground())
-                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                            .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
-                        }
-                        .buttonStyle(.plain)
-
-                        Spacer(minLength: 12)
+                    // MARK: Inline daily forecast (NOAA only)
+                    if source == .noaa {
+                        inlineForecastSection
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-                    .padding(.bottom, 28)
+
+                    Spacer(minLength: 12)
                 }
-                // ✅ refreshable MUST be on ScrollView
-                .refreshable {
-                    isManualRefreshing = true
-                    defer { isManualRefreshing = false }
-                    await refreshNow()
-                    successHaptic()
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 28)
+            }
+            // ✅ IMPORTANT: refreshable MUST be on ScrollView
+            .refreshable {
+                isManualRefreshing = true
+                defer { isManualRefreshing = false }
+
+                await refreshNow()
+                await refreshForecastNow()
+
+                successHaptic()
+            }
+        }
+
+        // ============================
+        // 🔽 CODE SNIPPET 1 STARTS HERE
+        // ============================
+
+        .task {
+            viewModel.loadCached()
+            location.request()
+            await refreshNow()
+            await refreshForecastNow()
+        }
+        .onReceive(location.$coordinate) { coord in
+            guard coord != nil else { return }
+            guard selection.selectedFavorite == nil else { return } // don’t override favorite pin
+            Task {
+                await refreshNow()
+                await refreshForecastNow()
+            }
+        }
+        .onReceive(location.$locationName) { name in
+            guard selection.selectedFavorite == nil else { return }
+            guard let name, !name.isEmpty else { return }
+            viewModel.currentLocationLabel = name
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task {
+                await refreshNow()
+                await refreshForecastNow()
+            }
+        }
+        .onChange(of: selection.selectedFavorite?.id) { _, _ in
+            // Forecasts are NOAA only; if user pins a favorite, update inline forecast too
+            Task {
+                await refreshForecastNow()
+            }
+        }
+        .onChange(of: sourceRaw) { _, newValue in
+            if newValue == CurrentConditionsSource.pws.rawValue {
+                // switching to PWS makes favorites irrelevant
+                selection.selectedFavorite = nil
+                previousSourceRaw = nil
+                viewModel.pwsLabel = ""
+            }
+            Task {
+                await refreshNow()
+                await refreshForecastNow()
+            }
+        }
+
+        // 🔹 Navigation + toolbar MUST be attached here
+        .navigationTitle("Nimbus")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+
+                Button {
+                    showingLocations = true
+                } label: {
+                    Image(systemName: "star.circle")
                 }
-                .task {
-                    viewModel.loadCached()
-                    location.request()
-                    await refreshNow()
+                .accessibilityLabel("Choose location")
+
+                Button {
+                    showingSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
                 }
-                .onReceive(location.$coordinate) { coord in
-                    guard coord != nil else { return }
-                    guard selection.selectedFavorite == nil else { return } // don’t override favorite selection
-                    Task { await refreshNow() }
-                }
-                .onReceive(location.$locationName) { name in
-                    guard selection.selectedFavorite == nil else { return }
-                    guard let name, !name.isEmpty else { return }
-                    viewModel.currentLocationLabel = name
-                }
-                .onChange(of: scenePhase) { _, phase in
-                    guard phase == .active else { return }
-                    Task { await refreshNow() }
-                }
-                .onChange(of: sourceRaw) { _, newValue in
-                    // If user switches to PWS, favorites are no longer applicable
-                    if newValue == CurrentConditionsSource.pws.rawValue {
-                        selection.selectedFavorite = nil
-                        previousSourceRaw = nil
-                        viewModel.pwsLabel = ""
+                .accessibilityLabel("Settings")
+            }
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
+        }
+        .sheet(isPresented: $showingLocations) {
+            locationsSheet
+        }
+
+        // ============================
+        // 🔼 CODE SNIPPET 1 ENDS HERE
+        // ============================
+    }
+
+    // MARK: - Sections
+
+    private var headerSection: some View {
+        VStack(spacing: 10) {
+            VStack(spacing: 2) {
+                Text("Current Conditions")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                if !headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    HStack(spacing: 6) {
+                        Text(headerLocationText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        if showCurrentLocationGlyph {
+                            Image(systemName: "location.circle")
+                                .imageScale(.small)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                    Task { await refreshNow() }
+                } else {
+                    Text("Current Location")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if source == .pws, !viewModel.pwsLabel.isEmpty {
+                    Text("\(viewModel.pwsLabel) • PWS")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
             }
-            .navigationTitle("Nimbus")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
 
-                    Button { showingLocations = true } label: {
-                        Image(systemName: "star.circle")
-                    }
-                    .accessibilityLabel("Choose location")
+            UpdatedStatusRow(
+                text: isManualRefreshing ? "Refreshing…" : viewModel.lastUpdatedText,
+                isRefreshing: isManualRefreshing,
+                color: .secondary
+            )
+            .animation(.easeInOut(duration: 0.25), value: isManualRefreshing)
+            .animation(.easeInOut(duration: 0.25), value: viewModel.lastUpdated)
 
-                    Button { showingSettings = true } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .accessibilityLabel("Settings")
-                }
+            if !networkMonitor.isOnline {
+                pill("Offline — showing last update", "wifi.slash")
             }
-            .sheet(isPresented: $showingSettings) {
-                SettingsView()
+
+            if let msg = viewModel.errorMessage {
+                pill(msg, "exclamationmark.triangle.fill")
             }
-            .sheet(isPresented: $showingLocations) {
-                locationsSheet
+
+            if viewModel.isStale {
+                pill("STALE", "clock.badge.exclamationmark")
             }
         }
     }
 
+    private var tilesSection: some View {
+        HStack(spacing: 14) {
+
+            // Left column: wind + humidity
+            VStack(spacing: 14) {
+                miniTile("wind", .teal, viewModel.windDisplay)
+                miniTile("drop", .blue, viewModel.humidity)
+            }
+            .frame(maxWidth: .infinity)
+
+            // Center big tile: temperature
+            bigTempTile
+
+            // Right column: conditions + pressure
+            VStack(spacing: 14) {
+                if source == .noaa {
+                    let hour = Calendar.current.component(.hour, from: Date())
+                    let isNight = hour < 6 || hour >= 18
+                    let sym = conditionsSymbolAndColor(for: viewModel.conditions, isNight: isNight)
+                    miniTile(sym.symbol, sym.color, viewModel.conditions)
+                } else {
+                    miniTile("cloud.rain", .blue, viewModel.precipitation)
+                }
+                miniTile("gauge", .orange, viewModel.pressure)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var inlineForecastSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Daily Forecast")
+                    .font(.title3.weight(.semibold))   // ✅ same as "Current Conditions"
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity)        // ✅ full width
+                    .multilineTextAlignment(.center)   // ✅ centered text
+                Spacer()
+                if forecastVM.isLoading && forecastVM.periods.isEmpty {
+                    ProgressView().controlSize(.small)
+                }
+            }
+
+            if let msg = forecastVM.errorMessage, !msg.isEmpty {
+                Text(msg)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else if forecastVM.periods.isEmpty {
+                Text("Loading forecast…")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                InlineDailyForecastView(periods: forecastVM.periods)
+                    .padding(14)
+                    .background(cardBackground())
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            }
+        }
+    }
+
+    private var bigTempTile: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "thermometer")
+                .foregroundStyle(Color.red)
+                .font(tempIconFont)
+
+            Text(viewModel.temp)
+                .font(.system(size: tempFontSize, weight: .semibold))
+                .monospacedDigit()
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: bigMinHeight)
+        .padding(.vertical, 8)
+        .background(tileBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func miniTile(_ systemImage: String, _ color: Color, _ value: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(color)
+                .font(miniIconFont)
+
+            Text(value)
+                .font(miniValueFont)
+                .monospacedDigit()
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: miniMinHeight)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(tileBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
     // MARK: - Locations sheet
+
     private var locationsSheet: some View {
         NavigationStack {
             List {
+
+                // MARK: - Search
+                Section {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+
+                        TextField("Search city, state", text: $searchVM.query)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .submitLabel(.search)
+                            .onSubmit { Task { await searchVM.search() } }
+
+                        if searchVM.isSearching {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+
+                        if !searchVM.query.isEmpty {
+                            Button {
+                                searchVM.query = ""
+                                searchVM.results = []
+                                dismissKeyboard()
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                // MARK: - Search Results
+                if !searchVM.results.isEmpty {
+                    Section("Results") {
+                        ForEach(searchVM.results.prefix(8)) { r in
+                            Button {
+                                // Selecting a searched city implies NOAA
+                                if previousSourceRaw == nil {
+                                    previousSourceRaw = sourceRaw
+                                }
+                                sourceRaw = CurrentConditionsSource.noaa.rawValue
+                                viewModel.pwsLabel = ""
+
+                                let f = FavoriteLocation(
+                                    title: r.title,
+                                    subtitle: r.subtitle,
+                                    latitude: r.coordinate.latitude,
+                                    longitude: r.coordinate.longitude
+                                )
+
+                                favorites.add(f)
+                                selection.selectedFavorite = f
+
+                                searchVM.query = ""
+                                searchVM.results = []
+                                dismissKeyboard()
+
+                                Task {
+                                    await refreshNow()
+                                    await refreshForecastNow()
+                                }
+                                
+                                showingLocations = false
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(r.title)
+                                            .font(.headline)
+
+                                        if !r.subtitle.isEmpty {
+                                            Text(r.subtitle)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "star.fill")
+                                        .foregroundStyle(.yellow)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // MARK: - Current Location
                 Section {
                     Button {
-                        // Switch back to "Current Location"
                         selection.selectedFavorite = nil
 
-                        // Restore previous source if we had forced NOAA for a favorite
                         if let prev = previousSourceRaw {
                             sourceRaw = prev
                             previousSourceRaw = nil
                         }
 
-                        // If not in PWS, clear any stale PWS label
                         if source != .pws {
                             viewModel.pwsLabel = ""
                         }
 
-                        Task { await refreshNow() }
+                        searchVM.query = ""
+                        searchVM.results = []
+                        dismissKeyboard()
+
+                        Task {
+                            await refreshNow()
+                            await refreshForecastNow()
+                        }
                         showingLocations = false
                     } label: {
                         HStack {
                             Text("Current Location")
                             Spacer()
-                            if selection.selectedFavorite == nil { Image(systemName: "checkmark") }
+                            if selection.selectedFavorite == nil {
+                                Image(systemName: "checkmark")
+                            }
                         }
                     }
                 }
 
+                // MARK: - Favorites
                 Section("Favorites") {
                     if favorites.favorites.isEmpty {
                         Text("No favorites yet.")
@@ -345,7 +469,6 @@ struct ContentView: View {
                     } else {
                         ForEach(favorites.favorites) { f in
                             Button {
-                                // Selecting a favorite implies NOAA current conditions
                                 if previousSourceRaw == nil {
                                     previousSourceRaw = sourceRaw
                                 }
@@ -355,13 +478,22 @@ struct ContentView: View {
 
                                 selection.selectedFavorite = f
 
-                                Task { await refreshNow() }
+                                searchVM.query = ""
+                                searchVM.results = []
+                                dismissKeyboard()
+
+                                Task {
+                                    await refreshNow()
+                                    await refreshForecastNow()
+                                }
                                 showingLocations = false
                             } label: {
                                 HStack {
                                     Text(f.displayName)
                                     Spacer()
-                                    if selection.selectedFavorite?.id == f.id { Image(systemName: "checkmark") }
+                                    if selection.selectedFavorite?.id == f.id {
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
                         }
@@ -377,13 +509,19 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { showingLocations = false }
+                    Button("Done") {
+                        searchVM.query = ""
+                        searchVM.results = []
+                        dismissKeyboard()
+                        showingLocations = false
+                    }
                 }
             }
         }
     }
 
-    // MARK: - Refresh routing
+    // MARK: - Async refresh
+
     private func refreshNow() async {
         if let f = selection.selectedFavorite {
             // Favorites always imply NOAA
@@ -401,21 +539,29 @@ struct ContentView: View {
         }
     }
 
-    private func isNightHourNow() -> Bool {
-        let hour = Calendar.current.component(.hour, from: Date())
-        return hour < 6 || hour >= 18
+    private func refreshForecastNow() async {
+        guard source == .noaa else { return } // forecasts are NOAA only
+
+        if let f = selection.selectedFavorite {
+            await forecastVM.refresh(for: f.coordinate)
+            return
+        }
+
+        guard let coord = location.coordinate else { return }
+
+        // ✅ when returning to GPS, force refresh (not loadIfNeeded)
+        await forecastVM.refresh(for: coord)
     }
 
-    // MARK: - UI components
+    // MARK: - UI helpers
+
     private func cardBackground() -> some View {
         RoundedRectangle(cornerRadius: 22, style: .continuous)
             .fill(Color(.tertiarySystemBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(
-                        scheme == .light
-                            ? Color.black.opacity(0.08)
-                            : Color.white.opacity(0.04),
+                        scheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.04),
                         lineWidth: 1
                     )
             )
@@ -441,132 +587,86 @@ struct ContentView: View {
         .background(.thinMaterial)
         .clipShape(Capsule())
     }
+}
 
-    private func tile(
-        _ systemImage: String,
-        _ color: Color,
-        _ value: String,
-        _ label: String,
-        valueFont: Font = .title3
-    ) -> some View {
-        VStack(alignment: .center, spacing: 8) {
-            Image(systemName: systemImage)
-                .foregroundStyle(color)
-                .font(.title2)
+private struct LocationsSheet: View {
+    @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var selection: LocationSelectionStore
 
-            Text(value)
-                .font(valueFont)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.75)
+    @Binding var showingLocations: Bool
+    @Binding var sourceRaw: String
+    @Binding var previousSourceRaw: String?
 
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-    }
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button {
+                        selection.selectedFavorite = nil
 
-    private func miniTile(
-        systemImage: String,
-        color: Color,
-        value: String,
-        accessibilityLabel: String,
-        allowTwoLines: Bool = false
-    ) -> some View {
-        VStack(spacing: isA11y ? 10 : 8) {
-            Image(systemName: systemImage)
-                .foregroundStyle(color)
-                .font(miniIconFont)
+                        if let prev = previousSourceRaw {
+                            sourceRaw = prev
+                            previousSourceRaw = nil
+                        }
 
-            Text(value)
-                .font(miniValueFont)
-                .monospacedDigit()
-                .multilineTextAlignment(.center)
-                .lineLimit(allowTwoLines ? 2 : 1)
-                .minimumScaleFactor(isA11y ? 0.65 : 0.75)
-        }
-        .frame(maxWidth: .infinity, minHeight: miniMinHeight)
-        .padding(.vertical, isA11y ? 10 : 8)
-        .padding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-    }
+                        showingLocations = false
+                    } label: {
+                        HStack {
+                            Text("Current Location")
+                            Spacer()
+                            if selection.selectedFavorite == nil {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
 
-    private func bigTempTile(
-        systemImage: String,
-        color: Color,
-        value: String,
-        accessibilityLabel: String
-    ) -> some View {
-        VStack(spacing: 0) {
+                Section("Favorites") {
+                    if favorites.favorites.isEmpty {
+                        Text("No favorites yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(favorites.favorites) { f in
+                            Button {
+                                if previousSourceRaw == nil {
+                                    previousSourceRaw = sourceRaw
+                                }
 
-            Spacer(minLength: 0)
-
-            VStack(spacing: isA11y ? 12 : 10) {
-                Image(systemName: systemImage)
-                    .foregroundStyle(color)
-                    .font(tempIconFont)
-
-                Text(value)
-                    .font(.system(size: tempFontSize, weight: .semibold))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                                sourceRaw = CurrentConditionsSource.noaa.rawValue
+                                selection.selectedFavorite = f
+                                showingLocations = false
+                            } label: {
+                                HStack {
+                                    Text(f.displayName)
+                                    Spacer()
+                                    if selection.selectedFavorite?.id == f.id {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                        .onDelete { indexSet in
+                            for i in indexSet {
+                                favorites.remove(favorites.favorites[i])
+                            }
+                        }
+                    }
+                }
             }
-            .offset(y: -2)   // 👈 HERE (try -1 or -2)
-            Spacer(minLength: 0)
+            .navigationTitle("Locations")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showingLocations = false }
+                }
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: bigMinHeight)
-        .padding(.vertical, isA11y ? 14 : 10)
-        .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-    }
-    
-    private func wideTile(
-        _ systemImage: String,
-        _ color: Color,
-        _ value: String,
-        _ label: String
-    ) -> some View {
-        VStack(alignment: .center, spacing: 8) {
-            Image(systemName: systemImage)
-                .foregroundStyle(color)
-                .font(.title2)
-
-            Text(value)
-                .font(.title3)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.75)
-
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding()
-        .background(tileBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
+
 // MARK: - Animated updated row + spinner
+
 private struct UpdatedStatusRow: View {
     let text: String
     let isRefreshing: Bool
@@ -590,7 +690,6 @@ private struct UpdatedStatusRow: View {
     }
 }
 
-// MARK: - Helpers
 private func successHaptic() {
     let gen = UINotificationFeedbackGenerator()
     gen.prepare()
@@ -598,7 +697,7 @@ private func successHaptic() {
 }
 
 #Preview {
-    ContentView()
+    NavigationStack { ContentView() }
         .environmentObject(FavoritesStore())
         .environmentObject(LocationSelectionStore())
 }
