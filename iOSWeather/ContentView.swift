@@ -1,34 +1,31 @@
 import SwiftUI
-import UIKit
 import Combine
+import UIKit
 import CoreLocation
 
 struct ContentView: View {
     @StateObject private var networkMonitor = NetworkMonitor()
     @StateObject private var viewModel = WeatherViewModel()
     @StateObject private var location = LocationManager()
-    
+
     @EnvironmentObject private var favorites: FavoritesStore
-    
-    @State private var showingLocations = false
-    @State private var selectedFavorite: FavoriteLocation? = nil
-    @State private var previousSourceRaw: String? = nil
-    
-    
-    
+    @EnvironmentObject private var selection: LocationSelectionStore
+
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var scheme
 
     // Manual refresh UI state (spinner + “Refreshing…”)
     @State private var isManualRefreshing = false
 
-    // Settings sheet
+    // Sheets
     @State private var showingSettings = false
+    @State private var showingLocations = false
 
-    private var tileBackground: some ShapeStyle {
-        Color(.secondarySystemBackground)
-    }
- 
+    // When we auto-force NOAA because user picked a favorite while in PWS mode,
+    // we’ll restore the previous mode when they go back to “Current Location”.
+    @State private var previousSourceRaw: String? = nil
+
+    // Settings source picker
     @AppStorage("currentConditionsSource")
     private var sourceRaw: String = CurrentConditionsSource.noaa.rawValue
 
@@ -36,8 +33,22 @@ struct ContentView: View {
         get { CurrentConditionsSource(rawValue: sourceRaw) ?? .noaa }
         set { sourceRaw = newValue.rawValue }
     }
-    
-    
+
+    // MARK: - Header derived values (avoid `let` inside ViewBuilder)
+    private var headerLocationText: String {
+        selection.selectedFavorite?.displayName ?? viewModel.currentLocationLabel
+    }
+
+    private var showCurrentLocationGlyph: Bool {
+        // Only show location.circle when we are using GPS-driven NOAA,
+        // not when a favorite is selected, and not for PWS mode.
+        selection.selectedFavorite == nil && source == .noaa
+    }
+
+    private var tileBackground: some ShapeStyle {
+        Color(.secondarySystemBackground)
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -46,31 +57,31 @@ struct ContentView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 18) {
 
-                        // MARK: Header (no background)
+                        // MARK: Header
                         VStack(spacing: 10) {
                             VStack(spacing: 2) {
                                 Text("Current Conditions")
                                     .font(.title3.weight(.semibold))
                                     .foregroundStyle(.primary)
 
-                                let headerLocation = selectedFavorite?.displayName ?? viewModel.currentLocationLabel
-                                let isCurrentGPS = (selectedFavorite == nil) && (source == .noaa)
-
-                                if !headerLocation.isEmpty {
+                                if !headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                     HStack(spacing: 6) {
-                                        Text(headerLocation)
+                                        Text(headerLocationText)
                                             .font(.subheadline)
                                             .foregroundStyle(.secondary)
-                                        
-                                        if isCurrentGPS {
+
+                                        if showCurrentLocationGlyph {
                                             Image(systemName: "location.circle")
                                                 .imageScale(.small)
                                                 .foregroundStyle(.secondary)
                                         }
-
                                     }
+                                } else {
+                                    Text("Current Location")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
                                 }
-                                
+
                                 if source == .pws, !viewModel.pwsLabel.isEmpty {
                                     Text("\(viewModel.pwsLabel) • PWS")
                                         .font(.caption)
@@ -78,7 +89,6 @@ struct ContentView: View {
                                 }
                             }
 
-                            // Spinner + animated text change
                             UpdatedStatusRow(
                                 text: isManualRefreshing ? "Refreshing…" : viewModel.lastUpdatedText,
                                 isRefreshing: isManualRefreshing,
@@ -117,10 +127,8 @@ struct ContentView: View {
                                 tile("wind", .teal, viewModel.windDisplay, "Wind")
 
                                 if source == .noaa {
-                                    let hour = Calendar.current.component(.hour, from: Date())
-                                    let isNight = hour < 6 || hour >= 18
-                                    let sym = conditionsSymbolAndColor(for: viewModel.conditions, isNight: isNight)
-
+                                    let isNightNow = isNightHourNow()
+                                    let sym = conditionsSymbolAndColor(for: viewModel.conditions, isNight: isNightNow)
                                     tile(sym.symbol, sym.color, viewModel.conditions, "Conditions")
                                 } else {
                                     tile("cloud.rain", .blue, viewModel.precipitation, "Rain today")
@@ -134,12 +142,11 @@ struct ContentView: View {
                             }
                         }
 
-                        // MARK: 7-Day Forecast Card
+                        // MARK: Forecast card
                         NavigationLink {
-                            ForecastView()
+                            ForecastView(initialSelection: selection.selectedFavorite)
                         } label: {
                             ZStack {
-                                // Centered content
                                 HStack(spacing: 12) {
                                     Image(systemName: "calendar")
                                         .font(.title3)
@@ -159,7 +166,6 @@ struct ContentView: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .center)
 
-                                // Right chevron overlay
                                 HStack {
                                     Spacer()
                                     Image(systemName: "chevron.right")
@@ -180,92 +186,53 @@ struct ContentView: View {
                     .padding(.top, 16)
                     .padding(.bottom, 28)
                 }
-                // ✅ IMPORTANT: refreshable MUST be on ScrollView
+                // ✅ refreshable MUST be on ScrollView
                 .refreshable {
                     isManualRefreshing = true
                     defer { isManualRefreshing = false }
-
-                    if let f = selectedFavorite {
-                        await viewModel.fetchCurrentFromNOAA(
-                            lat: f.coordinate.latitude,
-                            lon: f.coordinate.longitude,
-                            locationName: f.displayName
-                        )
-                    } else {
-                        await viewModel.refreshCurrentConditions(
-                            source: source,
-                            coord: location.coordinate,
-                            locationName: location.locationName
-                        )
-                    }
-
+                    await refreshNow()
                     successHaptic()
                 }
+                .task {
+                    viewModel.loadCached()
+                    location.request()
+                    await refreshNow()
                 }
-            .task {
-                viewModel.loadCached()
-                location.request()
-
-                // Optional: kick a refresh right away if we already have a coord
-                await viewModel.refreshCurrentConditions(
-                    source: source,
-                    coord: location.coordinate,
-                    locationName: location.locationName
-                )
-            }
-            .onReceive(location.$coordinate) { coord in
-                guard coord != nil else { return }
-                Task {
-                    await viewModel.refreshCurrentConditions(
-                        source: source,
-                        coord: location.coordinate,
-                        locationName: location.locationName
-                    )
+                .onReceive(location.$coordinate) { coord in
+                    guard coord != nil else { return }
+                    guard selection.selectedFavorite == nil else { return } // don’t override favorite selection
+                    Task { await refreshNow() }
                 }
-            }
                 .onReceive(location.$locationName) { name in
+                    guard selection.selectedFavorite == nil else { return }
                     guard let name, !name.isEmpty else { return }
                     viewModel.currentLocationLabel = name
                 }
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else { return }
-                    Task {
-                        await viewModel.refreshCurrentConditions(
-                            source: source,
-                            coord: location.coordinate,
-                            locationName: location.locationName
-                        )
-                    }
+                    Task { await refreshNow() }
                 }
-                .onChange(of: sourceRaw) { oldValue, newValue in
+                .onChange(of: sourceRaw) { _, newValue in
+                    // If user switches to PWS, favorites are no longer applicable
                     if newValue == CurrentConditionsSource.pws.rawValue {
-                        selectedFavorite = nil
+                        selection.selectedFavorite = nil
+                        previousSourceRaw = nil
+                        viewModel.pwsLabel = ""
                     }
+                    Task { await refreshNow() }
                 }
-                .onChange(of: sourceRaw) { _, _ in
-                    Task {
-                        await viewModel.refreshCurrentConditions(
-                            source: source,
-                            coord: location.coordinate,
-                            locationName: location.locationName
-                        )
-                    }
-                }
-                .navigationTitle("Nimbus")
+            }
+            .navigationTitle("Nimbus")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
 
-                    Button {
-                        showingLocations = true
-                    } label: {
+                    Button { showingLocations = true } label: {
                         Image(systemName: "star.circle")
                     }
                     .accessibilityLabel("Choose location")
 
-                    Button {
-                        showingSettings = true
-                    } label: {
+                    Button { showingSettings = true } label: {
                         Image(systemName: "gearshape")
                     }
                     .accessibilityLabel("Settings")
@@ -275,90 +242,114 @@ struct ContentView: View {
                 SettingsView()
             }
             .sheet(isPresented: $showingLocations) {
-                NavigationStack {
-                    List {
+                locationsSheet
+            }
+        }
+    }
 
-                        Section {
+    // MARK: - Locations sheet
+    private var locationsSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button {
+                        // Switch back to "Current Location"
+                        selection.selectedFavorite = nil
+
+                        // Restore previous source if we had forced NOAA for a favorite
+                        if let prev = previousSourceRaw {
+                            sourceRaw = prev
+                            previousSourceRaw = nil
+                        }
+
+                        // If not in PWS, clear any stale PWS label
+                        if source != .pws {
+                            viewModel.pwsLabel = ""
+                        }
+
+                        Task { await refreshNow() }
+                        showingLocations = false
+                    } label: {
+                        HStack {
+                            Text("Current Location")
+                            Spacer()
+                            if selection.selectedFavorite == nil { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+
+                Section("Favorites") {
+                    if favorites.favorites.isEmpty {
+                        Text("No favorites yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(favorites.favorites) { f in
                             Button {
-                                selectedFavorite = nil
-                                showingLocations = false
-
-                                if let coord = location.coordinate {
-                                    Task {
-                                        await viewModel.fetchCurrentFromNOAA(
-                                            lat: coord.latitude,
-                                            lon: coord.longitude,
-                                            locationName: location.locationName
-                                        )
-                                    }
-                                } else {
-                                    location.request()
+                                // Selecting a favorite implies NOAA current conditions
+                                if previousSourceRaw == nil {
+                                    previousSourceRaw = sourceRaw
                                 }
+
+                                sourceRaw = CurrentConditionsSource.noaa.rawValue
+                                viewModel.pwsLabel = ""
+
+                                selection.selectedFavorite = f
+
+                                Task { await refreshNow() }
+                                showingLocations = false
                             } label: {
                                 HStack {
-                                    Text("Current Location")
+                                    Text(f.displayName)
                                     Spacer()
-                                    if selectedFavorite == nil { Image(systemName: "checkmark") }
+                                    if selection.selectedFavorite?.id == f.id { Image(systemName: "checkmark") }
                                 }
                             }
                         }
-
-                        Section("Favorites") {
-                            if favorites.favorites.isEmpty {
-                                Text("No favorites yet.")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(favorites.favorites) { f in
-                                    Button {
-                                        selectedFavorite = f
-                                        showingLocations = false
-
-                                        // Save the user's current source (once) so we can restore it when they go back to Current Location
-                                        if previousSourceRaw == nil {
-                                            previousSourceRaw = sourceRaw
-                                        }
-
-                                        // Favorites always use NOAA current conditions
-                                        sourceRaw = CurrentConditionsSource.noaa.rawValue
-                                        viewModel.pwsLabel = ""   // hide PWS station label immediately
-
-                                        Task {
-                                            await viewModel.fetchCurrentFromNOAA(
-                                                lat: f.coordinate.latitude,
-                                                lon: f.coordinate.longitude,
-                                                locationName: f.displayName
-                                            )
-                                        }
-                                    } label: {
-                                        HStack {
-                                            Text(f.displayName)
-                                            Spacer()
-                                            if selectedFavorite?.id == f.id {
-                                                Image(systemName: "checkmark")
-                                            }
-                                        }
-                                    }
-                                }
+                        .onDelete { indexSet in
+                            for i in indexSet {
+                                favorites.remove(favorites.favorites[i])
                             }
                         }
                     }
-                    .navigationTitle("Locations")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { showingLocations = false }
-                        }
-                    }
+                }
+            }
+            .navigationTitle("Locations")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showingLocations = false }
                 }
             }
         }
     }
 
-    // MARK: - UI components
+    // MARK: - Refresh routing
+    private func refreshNow() async {
+        if let f = selection.selectedFavorite {
+            // Favorites always imply NOAA
+            await viewModel.fetchCurrentFromNOAA(
+                lat: f.coordinate.latitude,
+                lon: f.coordinate.longitude,
+                locationName: f.displayName
+            )
+        } else {
+            await viewModel.refreshCurrentConditions(
+                source: source,
+                coord: location.coordinate,
+                locationName: location.locationName
+            )
+        }
+    }
 
+    private func isNightHourNow() -> Bool {
+        let hour = Calendar.current.component(.hour, from: Date())
+        return hour < 6 || hour >= 18
+    }
+
+    // MARK: - UI components
     private func cardBackground() -> some View {
         RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .fill(Color(.tertiarySystemBackground))   // ✅ closest List row match
+            .fill(Color(.tertiarySystemBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(
@@ -391,7 +382,7 @@ struct ContentView: View {
         .clipShape(Capsule())
     }
 
-    func tile(
+    private func tile(
         _ systemImage: String,
         _ color: Color,
         _ value: String,
@@ -421,7 +412,7 @@ struct ContentView: View {
         )
     }
 
-    func wideTile(
+    private func wideTile(
         _ systemImage: String,
         _ color: Color,
         _ value: String,
@@ -433,7 +424,7 @@ struct ContentView: View {
                 .font(.title2)
 
             Text(value)
-                .font(.title3)                // slightly smaller than title2
+                .font(.title3)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.75)
@@ -451,7 +442,6 @@ struct ContentView: View {
 }
 
 // MARK: - Animated updated row + spinner
-
 private struct UpdatedStatusRow: View {
     let text: String
     let isRefreshing: Bool
@@ -476,13 +466,14 @@ private struct UpdatedStatusRow: View {
 }
 
 // MARK: - Helpers
-
 private func successHaptic() {
     let gen = UINotificationFeedbackGenerator()
     gen.prepare()
     gen.notificationOccurred(.success)
 }
 
-
-
-#Preview { ContentView() }
+#Preview {
+    ContentView()
+        .environmentObject(FavoritesStore())
+        .environmentObject(LocationSelectionStore())
+}

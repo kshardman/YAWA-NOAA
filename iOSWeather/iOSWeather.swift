@@ -9,7 +9,9 @@ import UIKit
 
 @main
 struct iOSWeather: App {
-    @StateObject private var favorites = FavoritesStore()
+   @StateObject private var favorites = FavoritesStore()
+   @StateObject private var selection = LocationSelectionStore()
+ 
     init() {
         let appearance = UINavigationBarAppearance()
         appearance.configureWithTransparentBackground()
@@ -30,6 +32,7 @@ struct iOSWeather: App {
                 ContentView()
             }
             .environmentObject(favorites)
+            .environmentObject(selection)
         }
     }
 }

@@ -504,14 +504,22 @@ struct ForecastView: View {
     @StateObject private var location = LocationManager()
     @StateObject private var vm = ForecastViewModel()
     @StateObject private var searchVM = CitySearchViewModel()
-    @EnvironmentObject private var favorites: FavoritesStore
 
-    @State private var selected: FavoriteLocation? = nil
+    @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var selection: LocationSelectionStore   // ✅ shared selection
+
     @State private var showingFavorites = false
     @State private var selectedDetail: DetailPayload?
+    
+    @State private var selected: FavoriteLocation?
+
+        init(initialSelection: FavoriteLocation? = nil) {
+            _selected = State(initialValue: initialSelection)
+        }
+
 
     private let sideColumnWidth: CGFloat = 130
-    
+
     // MARK: - Detail payload
     private struct DetailPayload: Identifiable {
         let id = UUID()
@@ -527,7 +535,7 @@ struct ForecastView: View {
 
     // MARK: - Toolbar subtitle
     private var subtitleLocationText: String {
-        if let selected {
+        if let selected = selection.selectedFavorite {
             return selected.displayName
         }
 
@@ -537,6 +545,10 @@ struct ForecastView: View {
         }
 
         return "Current Location"
+    }
+
+    private var isShowingCurrentGPS: Bool {
+        selection.selectedFavorite == nil
     }
 
     // MARK: - Alert banner
@@ -632,7 +644,8 @@ struct ForecastView: View {
                             .font(.headline)
                             .monospacedDigit()
                             .frame(width: sideColumnWidth, alignment: .trailing)
-                    }                }
+                    }
+                }
                 .contentShape(Rectangle())
                 .onTapGesture {
                     let dayText = d.day.detailedForecast ?? d.day.shortForecast
@@ -703,7 +716,10 @@ struct ForecastView: View {
                                     )
 
                                     favorites.add(f)
-                                    selected = f
+
+                                    // ✅ selecting from forecast should update current conditions too
+                                    selection.selectedFavorite = f
+
                                     Task { await vm.refresh(for: f.coordinate) }
 
                                     searchVM.query = ""
@@ -745,17 +761,19 @@ struct ForecastView: View {
                         .font(.headline)
 
                     HStack(spacing: 6) {
-                        Text(subtitleLocationText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        if selected == nil {
+                        if isShowingCurrentGPS {
                             Image(systemName: "location.circle")
                                 .imageScale(.small)
                                 .foregroundStyle(.secondary)
                         }
+
+                        Text(subtitleLocationText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
+
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showingFavorites = true
@@ -771,7 +789,7 @@ struct ForecastView: View {
                 List {
                     Section {
                         Button {
-                            selected = nil
+                            selection.selectedFavorite = nil
                             searchVM.query = ""
                             searchVM.results = []
                             dismissKeyboard()
@@ -787,7 +805,7 @@ struct ForecastView: View {
                             HStack {
                                 Text("Current Location")
                                 Spacer()
-                                if selected == nil {
+                                if selection.selectedFavorite == nil {
                                     Image(systemName: "checkmark")
                                 }
                             }
@@ -801,14 +819,14 @@ struct ForecastView: View {
                         } else {
                             ForEach(favorites.favorites) { f in
                                 Button {
-                                    selected = f
+                                    selection.selectedFavorite = f
                                     Task { await vm.refresh(for: f.coordinate) }
                                     showingFavorites = false
                                 } label: {
                                     HStack {
                                         Text(f.displayName)
                                         Spacer()
-                                        if selected?.id == f.id {
+                                        if selection.selectedFavorite?.id == f.id {
                                             Image(systemName: "checkmark")
                                         }
                                     }
@@ -837,16 +855,14 @@ struct ForecastView: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-
-                        // Optional: a small header line that reads nicely
                         Text(detail.title)
                             .font(.headline)
                             .foregroundStyle(.primary)
 
                         Text(detail.body)
-                            .font(.callout)                 // 👈 slightly more character than .body
+                            .font(.callout)
                             .foregroundStyle(.primary)
-                            .lineSpacing(6)                 // 👈 this is the big readability win
+                            .lineSpacing(6)
                             .multilineTextAlignment(.leading)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -868,14 +884,28 @@ struct ForecastView: View {
         // MARK: - Lifecycle
         .task {
             location.request()
+
+            if let selected = selection.selectedFavorite {
+                await vm.refresh(for: selected.coordinate)
+            } else if let coord = location.coordinate {
+                await vm.loadIfNeeded(for: coord)
+            }
         }
-        .onChange(of: coordKey) { _ in
-            guard selected == nil, let coord = location.coordinate else { return }
+        .onChange(of: coordKey) {
+            // Only auto-follow GPS when NOT pinned to a favorite
+            guard selection.selectedFavorite == nil,
+                  let coord = location.coordinate
+            else { return }
+
             Task { await vm.loadIfNeeded(for: coord) }
         }
         .refreshable {
-            guard let coord = location.coordinate else { return }
-            await vm.refresh(for: coord)
+            if let selected = selection.selectedFavorite {
+                await vm.refresh(for: selected.coordinate)
+            } else {
+                guard let coord = location.coordinate else { return }
+                await vm.refresh(for: coord)
+            }
         }
     }
 }
