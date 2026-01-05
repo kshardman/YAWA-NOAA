@@ -299,6 +299,9 @@ final class ForecastViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
+        // ✅ clear any prior error at the start of an intentional refresh
+        errorMessage = nil
+
         do {
             async let periodsTask = service.fetch7DayPeriods(lat: coord.latitude, lon: coord.longitude)
             async let alertsTask  = service.fetchActiveAlerts(lat: coord.latitude, lon: coord.longitude)
@@ -306,9 +309,17 @@ final class ForecastViewModel: ObservableObject {
             periods = try await periodsTask
             alerts  = try await alertsTask
 
+            // success
             errorMessage = nil
         } catch {
-            errorMessage = "Forecast unavailable."
+            // ✅ Treat cancellations as normal (don’t show an error)
+            if error is CancellationError { return }
+            if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
+
+            // ✅ Only show an error if we truly have nothing to show
+            if periods.isEmpty {
+                errorMessage = "Forecast unavailable."
+            }
         }
     }
     

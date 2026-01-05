@@ -78,13 +78,18 @@ final class WeatherViewModel: ObservableObject {
             return "CALM"
         }
 
+        // Gust only
+        if windValue == 0 && gustValue > 0 {
+            return "Gust \(gustValue)"
+        }
+
         let dir = windDirection.isEmpty ? "" : "\(windDirection) "
-        let base = "\(windValue)"
-        let gust = gustValue > windValue ? "G\(gustValue)" : ""
+        let gust = gustValue > windValue ? " G\(gustValue)" : ""
 
-        return dir + base + gust
+        return "\(dir)\(windValue)\(gust)"
     }
-
+    
+    
     private func extractInt(from text: String) -> Int {
         let pattern = #"[-+]?\d+"#
         if let range = text.range(of: pattern, options: .regularExpression) {
@@ -235,19 +240,31 @@ final class WeatherViewModel: ObservableObject {
             }
 
             // Wind (m/s -> mph), direction degrees -> compass
-            let windMph = o.windSpeed?.value.map { NOAAUnits.mpsToMph($0) } ?? 0
-            let gustMph = o.windGust?.value.map { NOAAUnits.mpsToMph($0) } ?? 0
+            let windMph = (o.windSpeed?.value).map {
+                NOAAUnits.speedToMph(value: $0, unitCode: o.windSpeed?.unitCode)
+            } ?? 0
+
+            let gustMph = (o.windGust?.value).map {
+                NOAAUnits.speedToMph(value: $0, unitCode: o.windGust?.unitCode)
+            } ?? 0
 
             let windDeg = Int((o.windDirection?.value ?? 0).rounded())
             let dirText = NOAAUnits.degreesToCompass(windDeg)
 
-            let windInt = Int(windMph.rounded())
-            let gustInt = Int(gustMph.rounded())
+            let w = Int(windMph.rounded())
+            let g = Int(gustMph.rounded())
 
-            windDirection = dirText
-            windDirectionDegrees = windDeg
-            wind = "\(windInt)"
-            windGust = "\(gustInt)"
+            if w == 0 && g == 0 {
+                wind = "0 mph"
+                windGust = "0 mph"
+                windDirection = ""
+                // (windDisplay will become CALM via your computed property)
+            } else {
+                windDirection = dirText
+                wind = "\(w) mph"
+                windGust = "\(g) mph"
+                // windDisplay computed property will format nicely
+            }
 
             // Pressure (Pa -> inHg)
             if let pa = o.barometricPressure?.value {
@@ -296,7 +313,7 @@ final class WeatherViewModel: ObservableObject {
         precipitationInches = Double(snap.precip) ?? 0.0
 
         // ---- Display strings ----
-        temp = "\(snap.tempF)°F"
+        temp = "\(snap.tempF)°"
         humidity = "\(snap.humidityPct)%"
         wind = "\(snap.windSpeed)"
         windGust = "\(snap.windGust)"
