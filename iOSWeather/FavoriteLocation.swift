@@ -42,11 +42,17 @@ final class FavoritesStore: ObservableObject {
     init() { load() }
 
     func add(_ loc: FavoriteLocation) {
-        if favorites.contains(where: { $0.title == loc.title && $0.subtitle == loc.subtitle }) { return }
-        favorites.insert(loc, at: 0)
+        if favorites.contains(where: {
+            $0.title == loc.title && $0.subtitle == loc.subtitle
+        }) {
+            return
+        }
+
+        favorites.append(loc)
+        sortFavorites()
         save()
     }
-
+    
     func remove(_ loc: FavoriteLocation) {
         favorites.removeAll { $0.id == loc.id }
         save()
@@ -61,10 +67,18 @@ final class FavoritesStore: ObservableObject {
         }
     }
 
+    private func sortFavorites() {
+        favorites.sort {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
+    }
+    
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: key) else { return }
+
         do {
             favorites = try JSONDecoder().decode([FavoriteLocation].self, from: data)
+            sortFavorites()
         } catch {
             favorites = []
         }
