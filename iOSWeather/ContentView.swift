@@ -64,9 +64,23 @@ struct ContentView: View {
                                     .font(.title3.weight(.semibold))
                                     .foregroundStyle(.primary)
 
-                                if !headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                let headerText: String = {
+                                    if source == .pws {
+                                        return viewModel.pwsLabel.isEmpty
+                                            ? "Personal Weather Station"
+                                            : "\(viewModel.pwsLabel) • PWS"
+                                    } else {
+                                        return selection.selectedFavorite?.displayName
+                                            ?? viewModel.currentLocationLabel
+                                    }
+                                }()
+
+                                let showCurrentLocationGlyph =
+                                    source == .noaa && selection.selectedFavorite == nil
+
+                                if !headerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                     HStack(spacing: 6) {
-                                        Text(headerLocationText)
+                                        Text(headerText)
                                             .font(.subheadline)
                                             .foregroundStyle(.secondary)
 
@@ -80,12 +94,6 @@ struct ContentView: View {
                                     Text("Current Location")
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
-                                }
-
-                                if source == .pws, !viewModel.pwsLabel.isEmpty {
-                                    Text("\(viewModel.pwsLabel) • PWS")
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
                                 }
                             }
 
