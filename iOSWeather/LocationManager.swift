@@ -692,7 +692,7 @@ struct ForecastView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 2) {
-                    Text("Forecasts")
+                    Text("Forecast")
                         .font(.headline)
                     Text(subtitleLocationText)
                         .font(.subheadline)
