@@ -9,7 +9,7 @@ import UIKit
 
 @main
 struct iOSWeather: App {
-
+    @StateObject private var favorites = FavoritesStore()
     init() {
         let appearance = UINavigationBarAppearance()
         appearance.configureWithTransparentBackground()
@@ -29,6 +29,7 @@ struct iOSWeather: App {
             NavigationStack {
                 ContentView()
             }
+            .environmentObject(favorites)
         }
     }
 }

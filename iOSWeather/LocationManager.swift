@@ -504,7 +504,7 @@ struct ForecastView: View {
     @StateObject private var location = LocationManager()
     @StateObject private var vm = ForecastViewModel()
     @StateObject private var searchVM = CitySearchViewModel()
-    @StateObject private var favorites = FavoritesStore()
+    @EnvironmentObject private var favorites: FavoritesStore
 
     @State private var selected: FavoriteLocation? = nil
     @State private var showingFavorites = false
@@ -530,7 +530,13 @@ struct ForecastView: View {
         if let selected {
             return selected.displayName
         }
-        return location.locationName ?? "Current Location"
+
+        if let name = location.locationName,
+           !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return name
+        }
+
+        return "Current Location"
     }
 
     // MARK: - Alert banner
@@ -737,12 +743,19 @@ struct ForecastView: View {
                 VStack(spacing: 2) {
                     Text("Forecast")
                         .font(.headline)
-                    Text(subtitleLocationText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 6) {
+                        Text(subtitleLocationText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        if selected == nil {
+                            Image(systemName: "location.circle")
+                                .imageScale(.small)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
-
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showingFavorites = true

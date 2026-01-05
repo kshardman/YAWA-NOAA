@@ -204,7 +204,7 @@ final class WeatherViewModel: ObservableObject {
             // Temperature (degC -> F)
             if let c = o.temperature?.value {
                 let f = NOAAUnits.cToF(c)
-                temp = "\(Int(f.rounded()))°"
+                temp = "\(Int(f.rounded()))°F"   // 👈 change here
             } else {
                 temp = "—"
             }

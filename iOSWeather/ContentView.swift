@@ -8,6 +8,14 @@ struct ContentView: View {
     @StateObject private var viewModel = WeatherViewModel()
     @StateObject private var location = LocationManager()
     
+    @EnvironmentObject private var favorites: FavoritesStore
+    
+    @State private var showingLocations = false
+    @State private var selectedFavorite: FavoriteLocation? = nil
+    @State private var previousSourceRaw: String? = nil
+    
+    
+    
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var scheme
 
@@ -45,11 +53,24 @@ struct ContentView: View {
                                     .font(.title3.weight(.semibold))
                                     .foregroundStyle(.primary)
 
-                                if !viewModel.currentLocationLabel.isEmpty {
-                                    Text(viewModel.currentLocationLabel)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                let headerLocation = selectedFavorite?.displayName ?? viewModel.currentLocationLabel
+                                let isCurrentGPS = (selectedFavorite == nil) && (source == .noaa)
+
+                                if !headerLocation.isEmpty {
+                                    HStack(spacing: 6) {
+                                        Text(headerLocation)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                        
+                                        if isCurrentGPS {
+                                            Image(systemName: "location.circle")
+                                                .imageScale(.small)
+                                                .foregroundStyle(.secondary)
+                                        }
+
+                                    }
                                 }
+                                
                                 if source == .pws, !viewModel.pwsLabel.isEmpty {
                                     Text("\(viewModel.pwsLabel) • PWS")
                                         .font(.caption)
@@ -164,11 +185,19 @@ struct ContentView: View {
                     isManualRefreshing = true
                     defer { isManualRefreshing = false }
 
-                    await viewModel.refreshCurrentConditions(
-                        source: source,
-                        coord: location.coordinate,
-                        locationName: location.locationName
-                    )
+                    if let f = selectedFavorite {
+                        await viewModel.fetchCurrentFromNOAA(
+                            lat: f.coordinate.latitude,
+                            lon: f.coordinate.longitude,
+                            locationName: f.displayName
+                        )
+                    } else {
+                        await viewModel.refreshCurrentConditions(
+                            source: source,
+                            coord: location.coordinate,
+                            locationName: location.locationName
+                        )
+                    }
 
                     successHaptic()
                 }
@@ -208,6 +237,11 @@ struct ContentView: View {
                         )
                     }
                 }
+                .onChange(of: sourceRaw) { oldValue, newValue in
+                    if newValue == CurrentConditionsSource.pws.rawValue {
+                        selectedFavorite = nil
+                    }
+                }
                 .onChange(of: sourceRaw) { _, _ in
                     Task {
                         await viewModel.refreshCurrentConditions(
@@ -220,7 +254,15 @@ struct ContentView: View {
                 .navigationTitle("Nimbus")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+
+                    Button {
+                        showingLocations = true
+                    } label: {
+                        Image(systemName: "star.circle")
+                    }
+                    .accessibilityLabel("Choose location")
+
                     Button {
                         showingSettings = true
                     } label: {
@@ -231,6 +273,83 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $showingLocations) {
+                NavigationStack {
+                    List {
+
+                        Section {
+                            Button {
+                                selectedFavorite = nil
+                                showingLocations = false
+
+                                if let coord = location.coordinate {
+                                    Task {
+                                        await viewModel.fetchCurrentFromNOAA(
+                                            lat: coord.latitude,
+                                            lon: coord.longitude,
+                                            locationName: location.locationName
+                                        )
+                                    }
+                                } else {
+                                    location.request()
+                                }
+                            } label: {
+                                HStack {
+                                    Text("Current Location")
+                                    Spacer()
+                                    if selectedFavorite == nil { Image(systemName: "checkmark") }
+                                }
+                            }
+                        }
+
+                        Section("Favorites") {
+                            if favorites.favorites.isEmpty {
+                                Text("No favorites yet.")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ForEach(favorites.favorites) { f in
+                                    Button {
+                                        selectedFavorite = f
+                                        showingLocations = false
+
+                                        // Save the user's current source (once) so we can restore it when they go back to Current Location
+                                        if previousSourceRaw == nil {
+                                            previousSourceRaw = sourceRaw
+                                        }
+
+                                        // Favorites always use NOAA current conditions
+                                        sourceRaw = CurrentConditionsSource.noaa.rawValue
+                                        viewModel.pwsLabel = ""   // hide PWS station label immediately
+
+                                        Task {
+                                            await viewModel.fetchCurrentFromNOAA(
+                                                lat: f.coordinate.latitude,
+                                                lon: f.coordinate.longitude,
+                                                locationName: f.displayName
+                                            )
+                                        }
+                                    } label: {
+                                        HStack {
+                                            Text(f.displayName)
+                                            Spacer()
+                                            if selectedFavorite?.id == f.id {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .navigationTitle("Locations")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showingLocations = false }
+                        }
+                    }
+                }
             }
         }
     }
