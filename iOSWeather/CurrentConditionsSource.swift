@@ -1,3 +1,11 @@
+//
+//  CurrentConditionsSource.swift
+//  iOSWeather
+//
+//  Created by Keith Sharman on 1/4/26.
+//
+
+
 import Foundation
 
 enum CurrentConditionsSource: String, CaseIterable, Identifiable {

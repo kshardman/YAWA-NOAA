@@ -15,6 +15,7 @@
 
 import Foundation
 import Combine
+import CoreLocation
 
 @MainActor
 final class WeatherViewModel: ObservableObject {
@@ -31,11 +32,15 @@ final class WeatherViewModel: ObservableObject {
     @Published var windDirectionDegrees: Int = 0
     @Published var lastUpdated: Date?
     @Published var errorMessage: String? = nil
+    @Published var conditions: String = "—"
 
     // MARK: - Numeric values (logic/theme-facing)
 
     @Published var temperatureF: Double?
     @Published var precipitationInches: Double?
+    @Published var currentLocationLabel: String = ""
+    @Published var pwsStationName: String = ""
+    @Published var pwsLabel: String = ""
 
     // MARK: - Fetch tracking
 
@@ -47,6 +52,7 @@ final class WeatherViewModel: ObservableObject {
     private var activeFetchTask: Task<Bool, Never>?
 
     private let service = WeatherService()
+    private let noaaCurrent = NOAACurrentConditionsService()
     
     var windDisplay: String {
         let windValue = extractInt(from: wind)
@@ -70,7 +76,13 @@ final class WeatherViewModel: ObservableObject {
         }
         return 0
     }
-    
+ 
+    // MARK: - PWS helpers
+       func loadPwsLabelIfNeeded() {
+           guard pwsLabel.isEmpty else { return }
+           pwsLabel = (try? configValue("stationID")) ?? ""
+       }
+
     // MARK: - Derived UI state
 
     var isStale: Bool {
@@ -99,7 +111,30 @@ final class WeatherViewModel: ObservableObject {
         guard let snap = WeatherCache.load() else { return }
         apply(snap)
     }
+    
+    func refreshCurrentConditions(
+        source: CurrentConditionsSource,
+        coord: CLLocationCoordinate2D?,
+        locationName: String?
+    ) async {
+        switch source {
+        case .noaa:
+            guard let coord else {
+                errorMessage = "Location unavailable."
+                return
+            }
+            await fetchCurrentFromNOAA(
+                lat: coord.latitude,
+                lon: coord.longitude,
+                locationName: locationName ?? currentLocationLabel
+            )
 
+        case .pws:
+            loadPwsLabelIfNeeded()
+            _ = await fetchWeather(force: true)
+        }
+    }
+    
     /// Fetches weather from the network.
     /// - force: bypasses cooldown (used for pull-to-refresh)
     @discardableResult
@@ -158,6 +193,81 @@ final class WeatherViewModel: ObservableObject {
 
         return ok
     }
+
+//    @MainActor
+    @MainActor
+    func fetchCurrentFromNOAA(lat: Double, lon: Double, locationName: String? = nil) async {
+        do {
+            let result = try await noaaCurrent.fetchLatestObservation(lat: lat, lon: lon)
+            let o = result.obs
+
+            // Temperature (degC -> F)
+            if let c = o.temperature?.value {
+                let f = NOAAUnits.cToF(c)
+                temp = "\(Int(f.rounded()))°"
+            } else {
+                temp = "—"
+            }
+
+            // Humidity (%)
+            if let h = o.relativeHumidity?.value {
+                humidity = "\(Int(h.rounded()))%"
+            } else {
+                humidity = "—"
+            }
+
+            // Wind (m/s -> mph), direction degrees -> compass
+            let windMph = o.windSpeed?.value.map { NOAAUnits.mpsToMph($0) } ?? 0
+            let gustMph = o.windGust?.value.map { NOAAUnits.mpsToMph($0) } ?? 0
+
+            let windDeg = Int((o.windDirection?.value ?? 0).rounded())
+            let dirText = NOAAUnits.degreesToCompass(windDeg)
+
+            let windInt = Int(windMph.rounded())
+            let gustInt = Int(gustMph.rounded())
+
+            windDirection = dirText
+            windDirectionDegrees = windDeg
+            wind = "\(windInt)"
+            windGust = "\(gustInt)"
+
+            // Pressure (Pa -> inHg)
+            if let pa = o.barometricPressure?.value {
+                let inHg = NOAAUnits.paToInHg(pa)
+                pressure = String(format: "%.2f", inHg)
+            } else {
+                pressure = "—"
+            }
+
+            // NOAA conditions text
+            conditions = o.textDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "—"
+            
+            precipitation = "—"
+            lastUpdated = Date()
+            lastSuccess = Date()
+
+            // ✅ Only update the label when we have a real city/state.
+            // Never overwrite a good label with the fallback.
+            if let locationName, !locationName.isEmpty {
+                currentLocationLabel = locationName
+            } else if currentLocationLabel.isEmpty {
+                currentLocationLabel = "Current Location"
+            }
+
+            errorMessage = nil
+
+        } catch {
+            // ✅ Treat cancellations as normal (don’t show an error)
+            if error is CancellationError { return }
+            if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
+
+            // Optional: log the real error while debugging
+            print("NOAA current conditions error:", error)
+
+            errorMessage = "NOAA current conditions unavailable."
+        }
+    }
+    
     
     // MARK: - Private helpers
 
@@ -220,6 +330,7 @@ private func extractNumber(from text: String) -> Int {
     }
     return 0
 }
+
 
 // MARK: - Simple cache
 

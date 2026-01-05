@@ -1,3 +1,11 @@
+//
+//  NOAAUnits.swift
+//  iOSWeather
+//
+//  Created by Keith Sharman on 1/4/26.
+//
+
+
 import Foundation
 
 // NOAA uses unitCode strings like "wmoUnit:degC", "wmoUnit:Pa", "wmoUnit:m_s-1", etc.

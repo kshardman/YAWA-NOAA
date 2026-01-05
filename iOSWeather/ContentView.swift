@@ -1,11 +1,13 @@
 import SwiftUI
 import UIKit
 import Combine
+import CoreLocation
 
 struct ContentView: View {
     @StateObject private var networkMonitor = NetworkMonitor()
     @StateObject private var viewModel = WeatherViewModel()
-
+    @StateObject private var location = LocationManager()
+    
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var scheme
 
@@ -18,7 +20,16 @@ struct ContentView: View {
     private var tileBackground: some ShapeStyle {
         Color(.secondarySystemBackground)
     }
+ 
+    @AppStorage("currentConditionsSource")
+    private var sourceRaw: String = CurrentConditionsSource.noaa.rawValue
 
+    private var source: CurrentConditionsSource {
+        get { CurrentConditionsSource(rawValue: sourceRaw) ?? .noaa }
+        set { sourceRaw = newValue.rawValue }
+    }
+    
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -29,9 +40,22 @@ struct ContentView: View {
 
                         // MARK: Header (no background)
                         VStack(spacing: 10) {
-                            Text("Current Conditions")
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(.primary)
+                            VStack(spacing: 2) {
+                                Text("Current Conditions")
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundStyle(.primary)
+
+                                if !viewModel.currentLocationLabel.isEmpty {
+                                    Text(viewModel.currentLocationLabel)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if source == .pws, !viewModel.pwsLabel.isEmpty {
+                                    Text("\(viewModel.pwsLabel) • PWS")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
 
                             // Spinner + animated text change
                             UpdatedStatusRow(
@@ -58,7 +82,7 @@ struct ContentView: View {
                         // MARK: Tiles
                         VStack(spacing: 14) {
 
-                            // Row 1: Temperature (bigger / attention-grabbing)
+                            // Row 1: Temperature (big)
                             tile(
                                 "thermometer",
                                 .red,
@@ -67,16 +91,25 @@ struct ContentView: View {
                                 valueFont: .system(size: 44, weight: .semibold)
                             )
 
-                            // Row 2: Wind + Pressure
+                            // Row 2: Wind + Conditions/Rain
                             HStack(spacing: 14) {
                                 tile("wind", .teal, viewModel.windDisplay, "Wind")
-                                tile("gauge", .orange, viewModel.pressure, "Pressure")
+
+                                if source == .noaa {
+                                    let hour = Calendar.current.component(.hour, from: Date())
+                                    let isNight = hour < 6 || hour >= 18
+                                    let sym = conditionsSymbolAndColor(for: viewModel.conditions, isNight: isNight)
+
+                                    tile(sym.symbol, sym.color, viewModel.conditions, "Conditions")
+                                } else {
+                                    tile("cloud.rain", .blue, viewModel.precipitation, "Rain today")
+                                }
                             }
 
-                            // Row 3: Humidity + Rain
+                            // Row 3: Humidity + Pressure
                             HStack(spacing: 14) {
                                 wideTile("drop", .blue, viewModel.humidity, "Humidity")
-                                wideTile("cloud.rain", .blue, viewModel.precipitation, "Rain today")
+                                wideTile("gauge", .orange, viewModel.pressure, "Pressure")
                             }
                         }
 
@@ -131,21 +164,60 @@ struct ContentView: View {
                     isManualRefreshing = true
                     defer { isManualRefreshing = false }
 
-                    if await viewModel.fetchWeather(force: true) {
-                        successHaptic()
-                    }
+                    await viewModel.refreshCurrentConditions(
+                        source: source,
+                        coord: location.coordinate,
+                        locationName: location.locationName
+                    )
+
+                    successHaptic()
                 }
-            }
+                }
             .task {
                 viewModel.loadCached()
-                await viewModel.fetchWeather()
+                location.request()
+
+                // Optional: kick a refresh right away if we already have a coord
+                await viewModel.refreshCurrentConditions(
+                    source: source,
+                    coord: location.coordinate,
+                    locationName: location.locationName
+                )
             }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active {
-                    Task { await viewModel.fetchWeather() }
+            .onReceive(location.$coordinate) { coord in
+                guard coord != nil else { return }
+                Task {
+                    await viewModel.refreshCurrentConditions(
+                        source: source,
+                        coord: location.coordinate,
+                        locationName: location.locationName
+                    )
                 }
             }
-            .navigationTitle("Nimbus")
+                .onReceive(location.$locationName) { name in
+                    guard let name, !name.isEmpty else { return }
+                    viewModel.currentLocationLabel = name
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active else { return }
+                    Task {
+                        await viewModel.refreshCurrentConditions(
+                            source: source,
+                            coord: location.coordinate,
+                            locationName: location.locationName
+                        )
+                    }
+                }
+                .onChange(of: sourceRaw) { _, _ in
+                    Task {
+                        await viewModel.refreshCurrentConditions(
+                            source: source,
+                            coord: location.coordinate,
+                            locationName: location.locationName
+                        )
+                    }
+                }
+                .navigationTitle("Nimbus")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -214,8 +286,9 @@ struct ContentView: View {
 
             Text(value)
                 .font(valueFont)
-                .monospacedDigit()
                 .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
 
             Text(label)
                 .font(.caption)
@@ -241,9 +314,10 @@ struct ContentView: View {
                 .font(.title2)
 
             Text(value)
-                .font(.title2)
-                .monospacedDigit()
+                .font(.title3)                // slightly smaller than title2
                 .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
 
             Text(label)
                 .font(.caption)
@@ -289,5 +363,7 @@ private func successHaptic() {
     gen.prepare()
     gen.notificationOccurred(.success)
 }
+
+
 
 #Preview { ContentView() }

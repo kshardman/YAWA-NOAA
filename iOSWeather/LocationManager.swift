@@ -161,6 +161,7 @@ struct NWSAlertsResponse: Decodable {
 struct NWSPointsResponse: Decodable {
     struct Properties: Decodable {
         let forecast: String
+        let observationStations: String
     }
     let properties: Properties
 }
@@ -315,6 +316,48 @@ final class ForecastViewModel: ObservableObject {
 }
 
 // MARK: - View
+
+func conditionsSymbolAndColor(
+    for text: String,
+    isNight: Bool
+) -> (symbol: String, color: Color) {
+
+    let t = text.lowercased()
+
+    if t.contains("thunder") {
+        return ("cloud.bolt.rain.fill", .purple)
+    }
+
+    if t.contains("snow") || t.contains("sleet") || t.contains("ice") {
+        return ("cloud.snow.fill", .cyan)
+    }
+
+    if t.contains("rain") || t.contains("shower") || t.contains("drizzle") {
+        return ("cloud.rain.fill", .blue)
+    }
+
+    if t.contains("fog") || t.contains("mist") || t.contains("haze") {
+        return ("cloud.fog.fill", .gray)
+    }
+
+    if t.contains("overcast") || t.contains("cloudy") {
+        return ("cloud.fill", .gray)
+    }
+
+    if t.contains("partly") || t.contains("mostly") {
+        return isNight
+            ? ("cloud.moon.fill", .gray)
+            : ("cloud.sun.fill", .yellow)
+    }
+
+    if t.contains("clear") || t.contains("sunny") {
+        return isNight
+            ? ("moon.stars.fill", .gray)
+            : ("sun.max.fill", .yellow)
+    }
+
+    return ("cloud.fill", .secondary)
+}
 
 private func forecastSymbolAndColor(
     for text: String,
@@ -780,9 +823,22 @@ struct ForecastView: View {
         .sheet(item: $selectedDetail) { detail in
             NavigationStack {
                 ScrollView {
-                    Text(detail.body)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
+                    VStack(alignment: .leading, spacing: 12) {
+
+                        // Optional: a small header line that reads nicely
+                        Text(detail.title)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Text(detail.body)
+                            .font(.callout)                 // 👈 slightly more character than .body
+                            .foregroundStyle(.primary)
+                            .lineSpacing(6)                 // 👈 this is the big readability win
+                            .multilineTextAlignment(.leading)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(16)
                 }
                 .navigationTitle(detail.title)
                 .navigationBarTitleDisplayMode(.inline)

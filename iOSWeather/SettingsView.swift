@@ -15,43 +15,72 @@ struct SettingsView: View {
     @State private var showKey = false
     @State private var copied = false
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("currentConditionsSource")
+    private var sourceRaw: String = CurrentConditionsSource.noaa.rawValue
+
+    private var source: CurrentConditionsSource {
+        get { CurrentConditionsSource(rawValue: sourceRaw) ?? .noaa }
+        set { sourceRaw = newValue.rawValue }
+    }
+    
+    
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Current Conditions Source") {
-                    LabeledContent("Station") {
-                        Text(stationID)
-                            .font(.body.weight(.semibold))
-                            .monospaced()
-                    }
 
-                    LabeledContent("API Key") {
-                        Text(showKey ? apiKey : masked(apiKey))
-                            .font(.body.weight(.semibold))
-                            .monospaced()
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                    }
-
-                    HStack(spacing: 12) {
-                        Button(showKey ? "Hide Key" : "Reveal Key") {
-                            showKey.toggle()
-                        }
-
-                        Button(copied ? "Copied" : "Copy Key") {
-                            UIPasteboard.general.string = apiKey
-                            copied = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                                copied = false
+                    Picker("Source", selection: $sourceRaw) {
+                        ForEach(CurrentConditionsSource.allCases) { s in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(s.title)
+                                Text(s.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
+                            .tag(s.rawValue)
                         }
-                        .disabled(apiKey == "—" || apiKey.isEmpty)
+                    }
+                    .pickerStyle(.inline)
+
+                    // ✅ Only show PWS details when PWS is selected
+                    if source == .pws {
+
+                        LabeledContent("Station") {
+                            Text(stationID)
+                                .font(.body.weight(.semibold))
+                                .monospaced()
+                        }
+
+                        LabeledContent("API Key") {
+                            Text(showKey ? apiKey : masked(apiKey))
+                                .font(.body.weight(.semibold))
+                                .monospaced()
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+
+                        HStack(spacing: 12) {
+                            Button(showKey ? "Hide Key" : "Reveal Key") {
+                                showKey.toggle()
+                            }
+
+                            Button(copied ? "Copied" : "Copy Key") {
+                                UIPasteboard.general.string = apiKey
+                                copied = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                    copied = false
+                                }
+                            }
+                            .disabled(apiKey == "—" || apiKey.isEmpty)
+                        }
                     }
                 }
 
                 Section("Attribution") {
-                    Text("Current conditions use Weather.com PWS (Personal Weather Station) API.")
+                    Text("Automatic current conditions use NOAA weather.gov nearby observations.")
+                        .foregroundStyle(.secondary)
+                    Text("Personal Weather Station mode uses Weather.com PWS API.")
                         .foregroundStyle(.secondary)
                     Text("Forecasts use NOAA weather.gov.")
                         .foregroundStyle(.secondary)

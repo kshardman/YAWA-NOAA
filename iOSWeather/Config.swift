@@ -1,3 +1,11 @@
+//
+//  Config.swift
+//  iOSWeather
+//
+//  Created by Keith Sharman on 1/4/26.
+//
+
+
 import Foundation
 
 func configValue(_ key: String) throws -> String {
