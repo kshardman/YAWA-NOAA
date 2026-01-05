@@ -141,22 +141,36 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
 // MARK: - NOAA/NWS API models
 
-struct NWSAlertsResponse: Decodable {
-    struct Feature: Decodable, Identifiable {
-        struct Properties: Decodable {
-            let event: String
-            let headline: String?
-            let severity: String?
-            let urgency: String?
-            let areaDesc: String?
-        }
+import Foundation
 
+struct NWSAlertsResponse: Decodable {
+    let features: [Feature]
+
+    struct Feature: Decodable, Identifiable {
+        // NOAA uses a string id like the full URL
         let id: String
+
+        // ✅ IMPORTANT: NOAA frequently returns geometry: null
+        let geometry: Geometry?
+
         let properties: Properties
     }
 
-    let features: [Feature]
+    struct Geometry: Decodable {
+        let type: String
+        let coordinates: [[[Double]]]? // keep loose; often polygon/multipolygon
+    }
+
+    struct Properties: Decodable {
+        let event: String
+        let severity: String?
+        let headline: String?
+        let areaDesc: String?
+    }
 }
+
+/// Minimal “any” decoder so Geometry can exist even if you never use it
+struct AnyDecodable: Decodable {}
 
 struct NWSPointsResponse: Decodable {
     struct Properties: Decodable {
@@ -284,42 +298,59 @@ final class ForecastViewModel: ObservableObject {
     
 
     func loadIfNeeded(for coord: CLLocationCoordinate2D) async {
-        // Prevent refetch spam from minor GPS jitter
+        // Always keep alerts current (they can change independently of periods)
+        await loadAlertsIfNeeded(for: coord)
+
+        // Prevent refetch spam for periods from minor GPS jitter
         if let last = lastCoord,
            abs(last.latitude - coord.latitude) < 0.01,
            abs(last.longitude - coord.longitude) < 0.01,
            !periods.isEmpty {
             return
         }
+
         lastCoord = coord
-        await refresh(for: coord)
+        await refresh(for: coord)   // refresh loads periods + alerts (fine if we already loaded alerts)
+    }
+
+    private func loadAlertsIfNeeded(for coord: CLLocationCoordinate2D) async {
+        // If we already have alerts and coord is basically the same, skip
+        if let last = lastCoord,
+           abs(last.latitude - coord.latitude) < 0.01,
+           abs(last.longitude - coord.longitude) < 0.01,
+           !alerts.isEmpty {
+            return
+        }
+
+        do {
+            alerts = try await service.fetchActiveAlerts(lat: coord.latitude, lon: coord.longitude)
+            // Don’t stomp a forecast error message with an alerts success
+        } catch {
+            // Don't show “Forecast unavailable” just because alerts failed
+            // Optional: keep alerts empty silently
+            // alerts = []
+        }
     }
 
     func refresh(for coord: CLLocationCoordinate2D) async {
         isLoading = true
         defer { isLoading = false }
 
-        // ✅ clear any prior error at the start of an intentional refresh
-        errorMessage = nil
-
         do {
-            async let periodsTask = service.fetch7DayPeriods(lat: coord.latitude, lon: coord.longitude)
-            async let alertsTask  = service.fetchActiveAlerts(lat: coord.latitude, lon: coord.longitude)
-
-            periods = try await periodsTask
-            alerts  = try await alertsTask
-
-            // success
+            periods = try await service.fetch7DayPeriods(lat: coord.latitude, lon: coord.longitude)
             errorMessage = nil
         } catch {
-            // ✅ Treat cancellations as normal (don’t show an error)
             if error is CancellationError { return }
             if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
+            errorMessage = "Forecast unavailable."
+            return
+        }
 
-            // ✅ Only show an error if we truly have nothing to show
-            if periods.isEmpty {
-                errorMessage = "Forecast unavailable."
-            }
+        // Alerts: best effort (don’t show “Forecast unavailable” if this fails)
+        do {
+            alerts = try await service.fetchActiveAlerts(lat: coord.latitude, lon: coord.longitude)
+        } catch {
+            alerts = []
         }
     }
     

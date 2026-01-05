@@ -14,6 +14,14 @@ struct ContentView: View {
 
     @EnvironmentObject private var favorites: FavoritesStore
     @EnvironmentObject private var selection: LocationSelectionStore
+    
+    @State private var selectedDetail: DetailPayload?
+
+    private struct DetailPayload: Identifiable {
+        let id = UUID()
+        let title: String
+        let body: String
+    }
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var scheme
@@ -151,20 +159,8 @@ struct ContentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-
-                Button {
-                    showingLocations = true
-                } label: {
-                    Image(systemName: "star.circle")
-                }
-                .accessibilityLabel("Choose location")
-
-                Button {
-                    showingSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .accessibilityLabel("Settings")
+                Button { showingLocations = true } label: { Image(systemName: "star.circle") }
+                Button { showingSettings = true } label: { Image(systemName: "gearshape") }
             }
         }
         .sheet(isPresented: $showingSettings) {
@@ -172,6 +168,29 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingLocations) {
             locationsSheet
+        }
+        .sheet(item: $selectedDetail) { detail in        // ✅ snippet 3 goes HERE
+            NavigationStack {
+                ScrollView {
+                    Text(detail.body)
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                        .lineSpacing(6)
+                        .multilineTextAlignment(.leading)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                }
+                .navigationTitle(detail.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { selectedDetail = nil }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
 
         // ============================
@@ -265,16 +284,21 @@ struct ContentView: View {
     }
 
     private var inlineForecastSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+
+            // Header row (centered title + spinner on right)
+            ZStack {
                 Text("Daily Forecast")
-                    .font(.title3.weight(.semibold))   // ✅ same as "Current Conditions"
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity)        // ✅ full width
-                    .multilineTextAlignment(.center)   // ✅ centered text
-                Spacer()
-                if forecastVM.isLoading && forecastVM.periods.isEmpty {
-                    ProgressView().controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+
+                HStack {
+                    Spacer()
+                    if forecastVM.isLoading && forecastVM.periods.isEmpty {
+                        ProgressView().controlSize(.small)
+                    }
                 }
             }
 
@@ -282,17 +306,110 @@ struct ContentView: View {
                 Text(msg)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else if forecastVM.periods.isEmpty {
-                Text("Loading forecast…")
+            }
+
+            // Alerts & Advisories
+            if let top = forecastVM.alerts.first {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Alerts & Advisories")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    InlineAlertRow(alert: top)
+
+                    if forecastVM.alerts.count > 1 {
+                        Text("\(forecastVM.alerts.count - 1) more…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(10)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+
+            // Forecast rows (restored)
+            if !forecastVM.periods.isEmpty {
+                let days = Array(combineDayNight(Array(forecastVM.periods.prefix(14))).prefix(7))
+
+                let sideCol: CGFloat = 120   // tweak 110–140 to taste
+
+                ForEach(days) { d in
+                    let sym = forecastSymbolAndColor(for: d.day.shortForecast, isDaytime: true)
+
+                    HStack(spacing: 10) {
+
+                        // Left column (fixed)
+                        HStack(spacing: 6) {
+                            Text(abbreviatedDayName(d.name))
+                                .font(.headline)
+                            Text(d.dateText)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: sideCol, alignment: .leading)
+
+                        // Middle column (true center)
+                        VStack(spacing: 3) {
+                            Image(systemName: sym.symbol)
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(sym.color)
+                                .font(.title2)
+
+                            if let pop = popText(d.day) {
+                                Text(pop)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            } else {
+                                Text(" ")
+                                    .font(.caption2)
+                                    .hidden()
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                        // Right column (fixed)
+                        Text("H \(d.highText)  L \(d.lowText)")
+                            .font(.headline)
+                            .monospacedDigit()
+                            .frame(width: sideCol, alignment: .trailing)
+                    }
+                    // ✅ SNIPPET 2: make the whole row tappable and set selectedDetail
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        let dayText = d.day.detailedForecast ?? d.day.shortForecast
+                        let nightText = d.night?.detailedForecast
+
+                        let body: String
+                        if let nightText,
+                           !nightText.isEmpty,
+                           nightText != dayText {
+                            body = "Day: \(dayText)\n\nNight: \(nightText)"
+                        } else {
+                            body = dayText
+                        }
+
+                        selectedDetail = DetailPayload(
+                            title: "\(abbreviatedDayName(d.name)) \(d.dateText)",
+                            body: body
+                        )
+                    }
+                    .padding(.vertical, 6)
+
+                    if d.id != days.last?.id {
+                        Divider().opacity(0.35)
+                    }
+                }
+            } else if !forecastVM.isLoading {
+                Text("No forecast yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else {
-                InlineDailyForecastView(periods: forecastVM.periods)
-                    .padding(14)
-                    .background(cardBackground())
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
         }
+        .padding(14)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private var bigTempTile: some View {
@@ -586,6 +703,48 @@ struct ContentView: View {
         .padding(.vertical, 8)
         .background(.thinMaterial)
         .clipShape(Capsule())
+    }
+}
+
+
+private struct InlineAlertRow: View {
+    let alert: NWSAlertsResponse.Feature
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbolForSeverity(alert.properties.severity))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(alert.properties.event)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+
+                if let headline = alert.properties.headline, !headline.isEmpty {
+                    Text(headline)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                } else if let area = alert.properties.areaDesc, !area.isEmpty {
+                    Text(area)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func symbolForSeverity(_ severity: String?) -> String {
+        switch severity?.lowercased() {
+        case "extreme", "severe": return "exclamationmark.octagon.fill"
+        case "moderate": return "exclamationmark.triangle.fill"
+        default: return "info.circle.fill"
+        }
     }
 }
 

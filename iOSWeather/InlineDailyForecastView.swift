@@ -36,8 +36,47 @@ struct InlineDailyForecastView: View {
 
     @State private var selectedDetail: DetailPayload?
 
+    private struct AlertRow: View {
+        let alert: NWSAlertsResponse.Feature
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: symbolForSeverity(alert.properties.severity))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.orange)
+
+                    Text(alert.properties.event)
+                        .font(.headline)
+
+                    Spacer()
+                }
+
+                if let headline = alert.properties.headline, !headline.isEmpty {
+                    Text(headline)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else if let area = alert.properties.areaDesc, !area.isEmpty {
+                    Text(area)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+
+        private func symbolForSeverity(_ severity: String?) -> String {
+            switch severity?.lowercased() {
+            case "extreme", "severe": return "exclamationmark.octagon.fill"
+            case "moderate": return "exclamationmark.triangle.fill"
+            default: return "info.circle.fill"
+            }
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
+            
             ForEach(combineDayNight(Array(periods.prefix(14)))) { d in
                 let sym = forecastSymbolAndColor(for: d.day.shortForecast, isDaytime: true)
 
