@@ -761,15 +761,15 @@ struct ForecastView: View {
                         .font(.headline)
 
                     HStack(spacing: 6) {
+                        Text(subtitleLocationText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
                         if isShowingCurrentGPS {
                             Image(systemName: "location.circle")
                                 .imageScale(.small)
                                 .foregroundStyle(.secondary)
                         }
-
-                        Text(subtitleLocationText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
                     }
                 }
             }
