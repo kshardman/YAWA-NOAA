@@ -75,34 +75,47 @@ struct ContentView: View {
         ZStack {
             Color(.systemBackground).ignoresSafeArea()
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
+            VStack(spacing: 18) {
 
-                    headerSection
+                headerSection
 
-                    tilesSection
+                tilesSection
 
-                    // MARK: Inline daily forecast (NOAA only)
-                    if source == .noaa {
+                // MARK: Inline daily forecast (NOAA only) — scrolls under tiles
+                if source == .noaa {
+
+                    // Optional: keep the title “anchored” (so it doesn’t scroll away)
+                    // If your inlineForecastSection already includes a "Daily Forecast" title,
+                    // you can remove this Text block.
+                   Text("Daily Forecast")
+                       .font(.title3.weight(.semibold))
+                       .foregroundStyle(.primary)
+                       .frame(maxWidth: .infinity, alignment: .center)
+
+                    ScrollView(showsIndicators: true) {
                         inlineForecastSection
+                            .padding(.bottom, 16)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(maxHeight: .infinity) // ✅ takes remaining space so it can scroll
+                    .refreshable {
+                        isManualRefreshing = true
+                        defer { isManualRefreshing = false }
+
+                        await refreshNow()
+                        await refreshForecastNow()
+
+                        successHaptic()
                     }
 
-                    Spacer(minLength: 12)
+                } else {
+                    // In PWS mode there’s no forecast — push content up nicely
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 28)
             }
-            // ✅ IMPORTANT: refreshable MUST be on ScrollView
-            .refreshable {
-                isManualRefreshing = true
-                defer { isManualRefreshing = false }
-
-                await refreshNow()
-                await refreshForecastNow()
-
-                successHaptic()
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 16)
         }
 
         // ============================
@@ -169,7 +182,7 @@ struct ContentView: View {
         .sheet(isPresented: $showingLocations) {
             locationsSheet
         }
-        .sheet(item: $selectedDetail) { detail in        // ✅ snippet 3 goes HERE
+        .sheet(item: $selectedDetail) { detail in
             NavigationStack {
                 ScrollView {
                     Text(detail.body)
@@ -288,11 +301,11 @@ struct ContentView: View {
 
             // Header row (centered title + spinner on right)
             ZStack {
-                Text("Daily Forecast")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity)
-                    .multilineTextAlignment(.center)
+//                Text("Daily Forecast")
+//                    .font(.title3.weight(.semibold))
+ //                   .foregroundStyle(.primary)
+//                    .frame(maxWidth: .infinity)
+//                    .multilineTextAlignment(.center)
 
                 HStack {
                     Spacer()
@@ -350,7 +363,7 @@ struct ContentView: View {
                         .frame(width: sideCol, alignment: .leading)
 
                         // Middle column (true center)
-                        VStack(spacing: 3) {
+                        VStack(spacing: 2) {
                             Image(systemName: sym.symbol)
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(sym.color)
@@ -395,7 +408,7 @@ struct ContentView: View {
                             body: body
                         )
                     }
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 4)
 
                     if d.id != days.last?.id {
                         Divider().opacity(0.35)

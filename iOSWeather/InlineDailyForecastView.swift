@@ -62,7 +62,7 @@ struct InlineDailyForecastView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
         }
 
         private func symbolForSeverity(_ severity: String?) -> String {
@@ -81,7 +81,7 @@ struct InlineDailyForecastView: View {
                 let sym = forecastSymbolAndColor(for: d.day.shortForecast, isDaytime: true)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
 
                         // Left
                         HStack(spacing: 6) {
@@ -135,7 +135,7 @@ struct InlineDailyForecastView: View {
                         body: body
                     )
                 }
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
 
                 Divider()
                     .opacity(0.35)

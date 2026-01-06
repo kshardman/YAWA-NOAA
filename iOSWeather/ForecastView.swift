@@ -155,7 +155,7 @@ struct ForecastView: View {
                         body: body
                     )
                 }
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
             }
         }
 
