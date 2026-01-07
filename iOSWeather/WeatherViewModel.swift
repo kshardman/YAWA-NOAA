@@ -132,21 +132,21 @@ final class WeatherViewModel: ObservableObject {
         return Date().timeIntervalSince(lastUpdated) > 900   // 15 minutes
     }
 
-    var lastUpdatedText: String {
-        guard let lastUpdated else { return "—" }
-
-        let delta = Date().timeIntervalSince(lastUpdated)
-        if delta < 60 {
-            return "Updated just now"
-        }
-
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        formatter.dateTimeStyle = .named
-
-        let relative = formatter.localizedString(for: lastUpdated, relativeTo: Date())
-        return "Updated \(relative)"
-    }
+//    var lastUpdatedText: String {
+//        guard let lastUpdated else { return "—" }
+//
+//        let delta = Date().timeIntervalSince(lastUpdated)
+//        if delta < 60 {
+//            return "Updated just now"
+//        }
+//
+//        let formatter = RelativeDateTimeFormatter()
+//        formatter.unitsStyle = .short
+//        formatter.dateTimeStyle = .named
+//
+//  /      let relative = formatter.localizedString(for: lastUpdated, relativeTo: Date())
+//        return "Updated \(relative)"
+//    }
     // MARK: - Public API
 
     func loadCached() {

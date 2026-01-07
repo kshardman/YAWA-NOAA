@@ -279,13 +279,13 @@ struct ContentView: View {
                 }
             }
 
-            UpdatedStatusRow(
-                text: isManualRefreshing ? "Refreshing…" : viewModel.lastUpdatedText,
-                isRefreshing: isManualRefreshing,
-                color: .secondary
-            )
-            .animation(.easeInOut(duration: 0.25), value: isManualRefreshing)
-            .animation(.easeInOut(duration: 0.25), value: viewModel.lastUpdated)
+//            UpdatedStatusRow(
+//                text: isManualRefreshing ? "Refreshing…" : viewModel.lastUpdatedText,
+//                isRefreshing: isManualRefreshing,
+//                color: .secondary
+//            )
+//            .animation(.easeInOut(duration: 0.25), value: isManualRefreshing)
+//            .animation(.easeInOut(duration: 0.25), value: viewModel.lastUpdated)
 
             if !networkMonitor.isOnline {
                 pill("Offline — showing last update", "wifi.slash")
@@ -881,28 +881,28 @@ private struct LocationsSheet: View {
 
 // MARK: - Animated updated row + spinner
 
-private struct UpdatedStatusRow: View {
-    let text: String
-    let isRefreshing: Bool
-    let color: Color
+// private struct UpdatedStatusRow: View {
+//    let text: String
+//    let isRefreshing: Bool
+//    let color: Color
 
-    var body: some View {
-        HStack(spacing: 8) {
-            if isRefreshing {
-                ProgressView()
-                    .controlSize(.mini)
-                    .tint(color)
-                    .transition(.opacity.combined(with: .scale))
-            }
+//    var body: some View {
+//        HStack(spacing: 8) {
+//            if isRefreshing {
+//                ProgressView()
+//                    .controlSize(.mini)
+//                    .tint(color)
+//                    .transition(.opacity.combined(with: .scale))
+//            }
 
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(color)
-                .contentTransition(.opacity)
-        }
-        .animation(.easeInOut(duration: 0.2), value: isRefreshing)
-    }
-}
+//            Text(text)
+//                .font(.subheadline)
+//                .foregroundStyle(color)
+//                .contentTransition(.opacity)
+//        }
+//        .animation(.easeInOut(duration: 0.2), value: isRefreshing)
+//    }
+// }
 
 private func successHaptic() {
     let gen = UINotificationFeedbackGenerator()
