@@ -356,6 +356,7 @@ struct ContentView: View {
             }
 
             // Alerts & Advisories
+            // Alerts & Advisories (tap to expand)
             if let top = forecastVM.alerts.first {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Alerts & Advisories")
@@ -373,8 +374,36 @@ struct ContentView: View {
                 .padding(10)
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    let p = top.properties
 
+                    var lines: [String] = []
+
+                    // Event is the title; include headline + area + severity in body
+                    if let headline = p.headline, !headline.isEmpty {
+                        lines.append(headline)
+                    }
+
+                    if let area = p.areaDesc, !area.isEmpty {
+                        lines.append("Area:\n\(area)")
+                    }
+
+                    if let sev = p.severity, !sev.isEmpty {
+                        lines.append("Severity: \(sev)")
+                    }
+
+                    // Fallback if nothing else exists
+                    if lines.isEmpty {
+                        lines.append(p.event)
+                    }
+
+                    selectedDetail = DetailPayload(
+                        title: p.event,
+                        body: lines.joined(separator: "\n\n")
+                    )
+                }
+            }
             // Forecast rows (restored)
             if !forecastVM.periods.isEmpty {
                 let days = Array(combineDayNight(Array(forecastVM.periods.prefix(14))).prefix(7))
