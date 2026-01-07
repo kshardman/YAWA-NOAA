@@ -59,6 +59,27 @@ final class WeatherViewModel: ObservableObject {
     private let service = WeatherService()
     private let noaaCurrent = NOAACurrentConditionsService()
    
+    // ✅ Visual cue: clear tile values while we fetch new data
+    func setLoadingPlaceholders() {
+        temp = "--"
+        humidity = "--"
+        wind = "--"
+        pressure = "--"
+        precipitation = "--"
+        windGust = "--"
+        windDirection = ""
+        windDirectionDegrees = 0
+
+        // Conditions tile: you can use "—" or "--"
+        conditions = "—"
+
+        // Optional: clear station label so it doesn’t look stale during refresh
+        // noaaStationId = ""
+        // noaaStationName = ""
+
+        errorMessage = nil
+    }
+    
     /// True when one or more key tiles are missing/unknown
     var isNOAADataPartial: Bool {
         // Any tile showing placeholder / missing data

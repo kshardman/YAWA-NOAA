@@ -295,7 +295,14 @@ final class ForecastViewModel: ObservableObject {
 
     private let service = NOAAService()
     private var lastCoord: CLLocationCoordinate2D?
-    
+
+    // ✅ Visual cue: clear stale rows/alerts while we fetch new data
+    func setLoadingPlaceholders() {
+        periods = []
+        alerts = []
+        errorMessage = nil
+        // leave isLoading to refresh()
+    }
 
     func loadIfNeeded(for coord: CLLocationCoordinate2D) async {
         // Always keep alerts current (they can change independently of periods)
@@ -310,7 +317,7 @@ final class ForecastViewModel: ObservableObject {
         }
 
         lastCoord = coord
-        await refresh(for: coord)   // refresh loads periods + alerts (fine if we already loaded alerts)
+        await refresh(for: coord)   // refresh loads periods + alerts
     }
 
     private func loadAlertsIfNeeded(for coord: CLLocationCoordinate2D) async {
@@ -327,8 +334,7 @@ final class ForecastViewModel: ObservableObject {
             // Don’t stomp a forecast error message with an alerts success
         } catch {
             // Don't show “Forecast unavailable” just because alerts failed
-            // Optional: keep alerts empty silently
-            // alerts = []
+            // Keep prior alerts (or leave empty) silently
         }
     }
 
@@ -336,25 +342,27 @@ final class ForecastViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
+        // 1) Periods are required. If this fails, show the forecast error.
         do {
             periods = try await service.fetch7DayPeriods(lat: coord.latitude, lon: coord.longitude)
             errorMessage = nil
         } catch {
+            // ✅ Treat cancellations as normal (don’t show an error)
             if error is CancellationError { return }
             if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
+
             errorMessage = "Forecast unavailable."
             return
         }
 
-        // Alerts: best effort (don’t show “Forecast unavailable” if this fails)
+        // 2) Alerts are best-effort. If this fails, don't show a forecast error.
         do {
             alerts = try await service.fetchActiveAlerts(lat: coord.latitude, lon: coord.longitude)
         } catch {
-            alerts = []
+            // Keep existing alerts (nice UX), or clear if you prefer:
+            // alerts = []
         }
     }
-    
-    
 }
 
 // MARK: - View

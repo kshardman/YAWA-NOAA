@@ -123,15 +123,28 @@ struct ContentView: View {
         // ============================
 
         .task {
-            viewModel.loadCached()
             location.request()
+
+            viewModel.setLoadingPlaceholders()
+            if source == .noaa {
+                forecastVM.setLoadingPlaceholders()
+            }
+            await Task.yield()
+
             await refreshNow()
             await refreshForecastNow()
         }
         .onReceive(location.$coordinate) { coord in
             guard coord != nil else { return }
             guard selection.selectedFavorite == nil else { return } // don’t override favorite pin
+
             Task {
+                viewModel.setLoadingPlaceholders()
+                if source == .noaa {
+                    forecastVM.setLoadingPlaceholders()
+                }
+                await Task.yield()
+
                 await refreshNow()
                 await refreshForecastNow()
             }
@@ -143,14 +156,28 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
+
             Task {
+                viewModel.setLoadingPlaceholders()
+                if source == .noaa {
+                    forecastVM.setLoadingPlaceholders()
+                }
+                await Task.yield()
+
                 await refreshNow()
                 await refreshForecastNow()
             }
         }
         .onChange(of: selection.selectedFavorite?.id) { _, _ in
-            // Forecasts are NOAA only; if user pins a favorite, update inline forecast too
+            // favorite/current location changed — refresh immediately
             Task {
+                viewModel.setLoadingPlaceholders()
+                if source == .noaa {
+                    forecastVM.setLoadingPlaceholders()
+                }
+                await Task.yield()
+
+                await refreshNow()
                 await refreshForecastNow()
             }
         }
@@ -161,7 +188,14 @@ struct ContentView: View {
                 previousSourceRaw = nil
                 viewModel.pwsLabel = ""
             }
+
             Task {
+                viewModel.setLoadingPlaceholders()
+                if source == .noaa {
+                    forecastVM.setLoadingPlaceholders()
+                }
+                await Task.yield()
+
                 await refreshNow()
                 await refreshForecastNow()
             }
@@ -652,9 +686,17 @@ struct ContentView: View {
 
     // MARK: - Async refresh
 
-    private func refreshNow() async {
+    private func refreshNow(showPlaceholders: Bool = false) async {
+        if showPlaceholders {
+            viewModel.setLoadingPlaceholders()
+            if source == .noaa {
+                forecastVM.setLoadingPlaceholders()
+            }
+            // Give SwiftUI a chance to paint the placeholders
+            await Task.yield()
+        }
+
         if let f = selection.selectedFavorite {
-            // Favorites always imply NOAA
             await viewModel.fetchCurrentFromNOAA(
                 lat: f.coordinate.latitude,
                 lon: f.coordinate.longitude,
