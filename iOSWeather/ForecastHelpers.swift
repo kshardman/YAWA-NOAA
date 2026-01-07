@@ -22,11 +22,11 @@ struct DailyForecast: Identifiable {
     }
 
     // These assume your combine logic is "day + optional night"
-    var highText: String { "\(day.temperature)°\(day.temperatureUnit)" }
+    var highText: String { "\(day.temperature)°" }
 
     var lowText: String {
         if let night {
-            return "\(night.temperature)°\(night.temperatureUnit)"
+            return "\(night.temperature)°"
         }
         // If NOAA didn't give the night period, fall back to day temp
         return "\(day.temperature)°\(day.temperatureUnit)"

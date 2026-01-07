@@ -20,9 +20,9 @@ struct InlineDailyForecastView: View {
             formatter.dateFormat = "M/d"
             return formatter.string(from: startDate)
         }
-        var highText: String { "\(day.temperature)°\(day.temperatureUnit)" }
+        var highText: String { "\(day.temperature)°" }
         var lowText: String {
-            if let night { return "\(night.temperature)°\(night.temperatureUnit)" }
+            if let night { return "\(night.temperature)°" }
             return "—"
         }
     }
