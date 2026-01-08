@@ -30,7 +30,7 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 Section {
-                    Toggle("Weather alerts", isOn: $notifications.alertsNotificationsEnabled)
+                    Toggle("Weather alert notifications", isOn: $notifications.alertsNotificationsEnabled)
 
                     HStack {
                         Text("System permission")
@@ -47,12 +47,9 @@ struct SettingsView: View {
                             }
                         }
                     }
-                } header: {
-                    Text("Notifications")
                 } footer: {
-                    Text("When enabled, YAWA can notify you when NOAA issues a new alert for the location you’re viewing.")
+                    Text("Get notified when NOAA issues a new alert for the location you’re viewing. Alerts are sent once per unique alert ID.")
                 }
-                
                 
                 Section("Current Conditions Source") {
                     Picker("Source", selection: $sourceRaw) {
