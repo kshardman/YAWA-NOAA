@@ -8,7 +8,7 @@ import SwiftUI
 import UIKit
 
 @main
-struct iOSWeather: App {
+struct YAWAApp: App {
     @StateObject private var favorites = FavoritesStore()
     @StateObject private var selection = LocationSelectionStore()
 

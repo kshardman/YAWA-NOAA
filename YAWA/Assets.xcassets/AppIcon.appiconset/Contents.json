@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "Thermo-icon-final 1.png",
+      "filename" : "YAWA_AppIcon_1024.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,6 @@
           "value" : "dark"
         }
       ],
-      "filename" : "Thermo-icon-final 2.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -25,7 +24,6 @@
           "value" : "tinted"
         }
       ],
-      "filename" : "Thermo-icon-final.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"

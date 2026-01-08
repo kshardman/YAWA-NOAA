@@ -11,27 +11,15 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A0E5E3372EEFD65A000977B9 /* iOSWeather.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iOSWeather.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A0956D0A2F0F4BFE00869F7A /* iOSWeather.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = iOSWeather.xcodeproj; sourceTree = SOURCE_ROOT; };
+		A0E5E3372EEFD65A000977B9 /* YAWA.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YAWA.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0E5E3692EEFE266000977B9 /* config.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = config.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		A00D2E132EF085EB0072FC2E /* Exceptions for "iOSWeather" folder in "iOSWeather" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = A0E5E3362EEFD65A000977B9 /* iOSWeather */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A0E5E3392EEFD65A000977B9 /* iOSWeather */ = {
+		A0E5E3392EEFD65A000977B9 /* YAWA */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				A00D2E132EF085EB0072FC2E /* Exceptions for "iOSWeather" folder in "iOSWeather" target */,
-			);
-			path = iOSWeather;
+			path = YAWA;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -51,15 +39,16 @@
 			isa = PBXGroup;
 			children = (
 				A0E5E3692EEFE266000977B9 /* config.plist */,
-				A0E5E3392EEFD65A000977B9 /* iOSWeather */,
+				A0E5E3392EEFD65A000977B9 /* YAWA */,
 				A0E5E3382EEFD65A000977B9 /* Products */,
+				A0956D0A2F0F4BFE00869F7A /* iOSWeather.xcodeproj */,
 			);
 			sourceTree = "<group>";
 		};
 		A0E5E3382EEFD65A000977B9 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A0E5E3372EEFD65A000977B9 /* iOSWeather.app */,
+				A0E5E3372EEFD65A000977B9 /* YAWA.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -67,9 +56,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A0E5E3362EEFD65A000977B9 /* iOSWeather */ = {
+		A0E5E3362EEFD65A000977B9 /* YAWA */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A0E5E3422EEFD65C000977B9 /* Build configuration list for PBXNativeTarget "iOSWeather" */;
+			buildConfigurationList = A0E5E3422EEFD65C000977B9 /* Build configuration list for PBXNativeTarget "YAWA" */;
 			buildPhases = (
 				A0E5E3332EEFD65A000977B9 /* Sources */,
 				A0E5E3342EEFD65A000977B9 /* Frameworks */,
@@ -80,13 +69,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A0E5E3392EEFD65A000977B9 /* iOSWeather */,
+				A0E5E3392EEFD65A000977B9 /* YAWA */,
 			);
-			name = iOSWeather;
+			name = YAWA;
 			packageProductDependencies = (
 			);
 			productName = iOSWeather;
-			productReference = A0E5E3372EEFD65A000977B9 /* iOSWeather.app */;
+			productReference = A0E5E3372EEFD65A000977B9 /* YAWA.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -105,7 +94,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A0E5E3322EEFD65A000977B9 /* Build configuration list for PBXProject "iOSWeather" */;
+			buildConfigurationList = A0E5E3322EEFD65A000977B9 /* Build configuration list for PBXProject "YAWA" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -119,7 +108,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A0E5E3362EEFD65A000977B9 /* iOSWeather */,
+				A0E5E3362EEFD65A000977B9 /* YAWA */,
 			);
 		};
 /* End PBXProject section */
@@ -280,14 +269,15 @@
 				DEVELOPMENT_TEAM = 9WPZ4893L6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = iOSWeather/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Nimbus;
+				INFOPLIST_FILE = YAWA/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = YAWA;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Show local forecast.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -317,14 +307,15 @@
 				DEVELOPMENT_TEAM = 9WPZ4893L6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = iOSWeather/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Nimbus;
+				INFOPLIST_FILE = YAWA/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = YAWA;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Show local forecast.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -345,7 +336,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A0E5E3322EEFD65A000977B9 /* Build configuration list for PBXProject "iOSWeather" */ = {
+		A0E5E3322EEFD65A000977B9 /* Build configuration list for PBXProject "YAWA" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A0E5E3402EEFD65C000977B9 /* Debug */,
@@ -354,7 +345,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A0E5E3422EEFD65C000977B9 /* Build configuration list for PBXNativeTarget "iOSWeather" */ = {
+		A0E5E3422EEFD65C000977B9 /* Build configuration list for PBXNativeTarget "YAWA" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A0E5E3432EEFD65C000977B9 /* Debug */,
