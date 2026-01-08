@@ -38,6 +38,14 @@ struct ContentView: View {
     // Manual refresh UI state
     @State private var isManualRefreshing = false
     
+    @State private var showEasterEgg = false
+
+    private func triggerEasterEgg() {
+        showEasterEgg = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showEasterEgg = false
+        }
+    }
     // MARK: - Refresh gating (Option A)
  
     private let refreshMinInterval: TimeInterval = 12 * 60   // 12 minutes
@@ -194,6 +202,26 @@ struct ContentView: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
             .padding(.bottom, 16)
+
+            // ✅ Easter egg overlay (inside ZStack, after main VStack)
+            if showEasterEgg {
+                VStack {
+                    Spacer().frame(height: 10)
+
+                    Text("YAWA ✨ Yet Another Weather App")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.thinMaterial)
+                        .clipShape(Capsule())
+                        .transition(.move(edge: .top).combined(with: .opacity))
+
+                    Spacer()
+                }
+                .animation(.easeInOut(duration: 0.2), value: showEasterEgg)
+                .zIndex(10) // keep it above everything
+            }
+
         }
 
         // ============================
@@ -298,9 +326,17 @@ struct ContentView: View {
         }
 
         // 🔹 Navigation + toolbar MUST be attached here
-        .navigationTitle("YAWA")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("YAWA")
+                    .font(.headline)
+                    .onLongPressGesture(minimumDuration: 1.0) {
+                        triggerEasterEgg()
+                    }
+                    .accessibilityLabel("YAWA")
+            }
+
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { showingLocations = true } label: { Image(systemName: "star.circle") }
                 Button { showingSettings = true } label: { Image(systemName: "gearshape") }
