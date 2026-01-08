@@ -229,6 +229,8 @@ struct ContentView: View {
         // ============================
 
         .task {
+            // 🔔 Ask for notification permission once on launch
+            await NotificationService.shared.requestAuthorizationIfNeeded()
             location.request()
 
             // immediate refresh on launch

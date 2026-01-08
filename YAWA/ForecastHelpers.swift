@@ -5,6 +5,7 @@
 //  Created by Keith Sharman on 1/5/26.
 //
 import Foundation
+import Combine
 
 // Shared model used by ForecastView AND ContentView (inline forecast)
 struct DailyForecast: Identifiable {

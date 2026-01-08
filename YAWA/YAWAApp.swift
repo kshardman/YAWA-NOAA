@@ -1,14 +1,11 @@
-//  iOSWeather.swift
-//
-//
-//  Created by Keith Sharman on 12/14/25.
-//
-
 import SwiftUI
 import UIKit
 
 @main
 struct YAWAApp: App {
+    // ✅ This wires in AppDelegate (BGTasks + notifications delegate)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     @StateObject private var favorites = FavoritesStore()
     @StateObject private var selection = LocationSelectionStore()
 
@@ -17,8 +14,6 @@ struct YAWAApp: App {
         appearance.configureWithTransparentBackground()
         appearance.backgroundEffect = UIBlurEffect(style: .systemMaterial)
         appearance.backgroundColor = .clear
-
-        // Optional: remove the bottom hairline/shadow for a cleaner “glass” look
         appearance.shadowColor = .clear
 
         UINavigationBar.appearance().standardAppearance = appearance

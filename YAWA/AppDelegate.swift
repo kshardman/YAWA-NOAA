@@ -1,19 +1,32 @@
 import UIKit
 import BackgroundTasks
+import UserNotifications
 
-final class AppDelegate: NSObject, UIApplicationDelegate {
-    static let refreshTaskId = "kpsorg.iOSWeather.refresh" // MUST match Info.plist
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    static let refreshTaskId = "kpsorg.yawa.refresh" // MUST match Info.plist
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil
     ) -> Bool {
 
+        // ✅ Foreground notifications: allow banners while app is open
+        UNUserNotificationCenter.current().delegate = self
+
+        // BG refresh registration
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.refreshTaskId, using: nil) { task in
             self.handleAppRefresh(task: task as! BGAppRefreshTask)
         }
 
         return true
+    }
+
+    // ✅ Show banner/sound even when app is foregrounded
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        return [.banner, .sound, .badge]
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
@@ -22,12 +35,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     private func scheduleAppRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: Self.refreshTaskId)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // iOS decides actual timing
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
 
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
-   //         print("BG refresh submit failed:", error)
+            // optional: print("BG refresh submit failed:", error)
         }
     }
 
@@ -48,6 +61,4 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             }
         }
     }
-
 }
-

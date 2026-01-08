@@ -8,6 +8,7 @@
 
 import SwiftUI
 import UIKit
+import UserNotifications
 
 struct SettingsView: View {
     @State private var stationID: String = "—"
@@ -23,13 +24,37 @@ struct SettingsView: View {
         set { sourceRaw = newValue.rawValue }
     }
     
-    
+    @ObservedObject private var notifications = NotificationsManager.shared
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Current Conditions Source") {
+                Section {
+                    Toggle("Weather alerts", isOn: $notifications.alertsNotificationsEnabled)
 
+                    HStack {
+                        Text("System permission")
+                        Spacer()
+                        Text(permissionLabel(notifications.authorizationStatus))
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline)
+
+                    if notifications.authorizationStatus == .denied {
+                        Button("Open iOS Notification Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Notifications")
+                } footer: {
+                    Text("When enabled, YAWA can notify you when NOAA issues a new alert for the location you’re viewing.")
+                }
+                
+                
+                Section("Current Conditions Source") {
                     Picker("Source", selection: $sourceRaw) {
                         ForEach(CurrentConditionsSource.allCases) { s in
                             VStack(alignment: .leading, spacing: 2) {
@@ -85,6 +110,10 @@ struct SettingsView: View {
                     Text("Forecasts use NOAA weather.gov.")
                         .foregroundStyle(.secondary)
                 }
+            
+            }
+            .task {
+                await notifications.refreshAuthorizationStatus()
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -101,6 +130,18 @@ struct SettingsView: View {
         }
     }
 
+    private func permissionLabel(_ status: UNAuthorizationStatus) -> String {
+        switch status {
+        case .authorized: return "On"
+        case .provisional: return "Provisional"
+        case .denied: return "Off"
+        case .notDetermined: return "Not set"
+        case .ephemeral: return "Ephemeral"
+        @unknown default: return "Unknown"
+        }
+    }
+    
+    
     // MARK: - Helpers
 
     private func masked(_ key: String) -> String {

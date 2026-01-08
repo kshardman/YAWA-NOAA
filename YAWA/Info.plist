@@ -4,15 +4,7 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>kpsorg.iOSWeather.refresh</string>
-	</array>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string></string>
-		<string></string>
-		<string>fetch</string>
+		<string>kpsorg.yawa.refresh</string>
 	</array>
 </dict>
 </plist>

@@ -369,7 +369,34 @@ final class ForecastViewModel: ObservableObject {
 
     private let service = NOAAService()
     private var lastCoord: CLLocationCoordinate2D?
+    private let notifyStore = AlertNotificationStore()
+    
+    @MainActor
+    private func notifyOnNewAlerts(locationTitle: String?) async {
+        guard !alerts.isEmpty else { return }
 
+        for a in alerts.prefix(2) {
+            let id = a.id
+
+            if notifyStore.hasNotified(id: id) { continue }
+            notifyStore.markNotified(id: id)
+
+            let event = a.properties.event
+            let headline = a.properties.headline
+                ?? a.properties.areaDesc
+                ?? ""
+
+            let place = (locationTitle?.isEmpty == false)
+                ? " • \(locationTitle!)"
+                : ""
+
+            NotificationService.shared.post(
+                title: "\(event)\(place)",
+                body: headline
+            )
+        }
+    }
+    
     // ✅ Visual cue: clear stale rows/alerts while we fetch new data
     func setLoadingPlaceholders() {
         periods = []
@@ -432,6 +459,10 @@ final class ForecastViewModel: ObservableObject {
         // 2) Alerts are best-effort. If this fails, don't show a forecast error.
         do {
             alerts = try await service.fetchActiveAlerts(lat: coord.latitude, lon: coord.longitude)
+//            print("🚨 alerts fetched:", alerts.map { $0.properties.event ?? "?" })
+//            print("🚨 alert ids:", alerts.map { $0.id })
+            // ✅ notify once per new alert id (after alerts are updated)
+            await notifyOnNewAlerts(locationTitle: nil)
         } catch {
             // Keep existing alerts (nice UX), or clear if you prefer:
             // alerts = []

@@ -318,7 +318,7 @@ final class WeatherViewModel: ObservableObject {
             if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
 
             // Optional: log the real error while debugging
-            print("NOAA current conditions error:", error)
+//            print("NOAA current conditions error:", error)
 
             errorMessage = "NOAA current conditions unavailable."
         }
