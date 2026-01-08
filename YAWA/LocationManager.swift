@@ -10,6 +10,7 @@ import SwiftUI
 import CoreLocation
 import Combine
 import MapKit
+import Foundation
 
 //city search
 
@@ -53,58 +54,85 @@ final class CitySearchViewModel: ObservableObject {
 
 // MARK: - Location
 
-final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+import Foundation
+import CoreLocation
+
+@MainActor
+final class LocationManager: NSObject, ObservableObject {
+
     @Published var coordinate: CLLocationCoordinate2D?
+    @Published var lastLocationDate: Date?
     @Published var status: CLAuthorizationStatus = .notDetermined
     @Published var errorMessage: String?
-
-    // City, ST for display
-    @Published var locationName: String?
+    @Published var locationName: String?   // City, ST for display
 
     private let manager = CLLocationManager()
     private var lastGeocodedCoord: CLLocationCoordinate2D?
     private let geocoder = CLGeocoder()
 
-    
-    
+    // Burst-update control
+    private var stopWorkItem: DispatchWorkItem?
+    private var isBursting = false
+
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        manager.distanceFilter = 100 // meters (helps reduce noise)
     }
 
+    /// Call on launch / when app becomes active
     func request() {
         errorMessage = nil
-        manager.requestWhenInUseAuthorization()
-        manager.requestLocation()
-    }
 
-    func refresh() {
-        errorMessage = nil
-        manager.requestLocation()
-    }
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
 
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        status = manager.authorizationStatus
-        switch status {
         case .authorizedWhenInUse, .authorizedAlways:
-            manager.requestLocation()
+            startBurstUpdate()
+
         case .denied, .restricted:
-            errorMessage = "Location access is disabled."
-        default:
+            // Optional message:
+            // errorMessage = "Location access is disabled. Enable it in Settings."
+            break
+
+        @unknown default:
             break
         }
     }
 
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.last else { return }
-        coordinate = loc.coordinate
-        Task { await reverseGeocodeIfNeeded(for: loc) }
+    /// Manual “try again”
+    func refresh() {
+        errorMessage = nil
+        startBurstUpdate()
     }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        errorMessage = "Could not get location."
-        print("Location error:", error)
+    // MARK: - Burst location update
+
+    private func startBurstUpdate() {
+        guard !isBursting else { return }
+        isBursting = true
+
+        // Cancel any previous stop timer
+        stopWorkItem?.cancel()
+
+        manager.startUpdatingLocation()
+
+        // Safety stop so we never run forever
+        let work = DispatchWorkItem { [weak self] in
+            self?.manager.stopUpdatingLocation()
+            self?.isBursting = false
+        }
+        stopWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
+    }
+
+    private func stopBurstUpdate() {
+        manager.stopUpdatingLocation()
+        isBursting = false
+        stopWorkItem?.cancel()
+        stopWorkItem = nil
     }
 
     // MARK: - Reverse geocode (City, ST)
@@ -126,22 +154,69 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
             let city = place.locality
             let state = place.administrativeArea
 
-            await MainActor.run {
-                if let city, let state { self.locationName = "\(city), \(state)" }
-                else if let city { self.locationName = city }
-                else if let state { self.locationName = state }
-                else { self.locationName = nil }
-            }
+            if let city, let state { self.locationName = "\(city), \(state)" }
+            else if let city { self.locationName = city }
+            else if let state { self.locationName = state }
+            else { self.locationName = nil }
         } catch {
             // silent fail is fine
         }
     }
 }
 
+// MARK: - CLLocationManagerDelegate
+
+extension LocationManager: CLLocationManagerDelegate {
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        status = manager.authorizationStatus
+
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            // If we just got authorized, immediately try to get a fix.
+            startBurstUpdate()
+
+        case .denied, .restricted:
+            break
+
+        case .notDetermined:
+            break
+
+        @unknown default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // Don’t show an error for transient failures; optional:
+        // errorMessage = error.localizedDescription
+        isBursting = false
+        print("LOC FAIL:", error)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.last else { return }
+        print("LOC:", loc.coordinate.latitude, loc.coordinate.longitude, "acc:", loc.horizontalAccuracy)
+        // Ignore very old cached fixes
+        if abs(loc.timestamp.timeIntervalSinceNow) > 30 { return }
+
+        // Update coordinate + timestamp immediately
+        self.coordinate = loc.coordinate
+        self.lastLocationDate = loc.timestamp
+
+        // Stop when accuracy is reasonable (prevents battery drain)
+//        if loc.horizontalAccuracy > 0 && loc.horizontalAccuracy <= 500 {
+//            stopBurstUpdate()
+ //       }
+
+        // Async reverse geocode safely
+        Task { [weak self] in
+            await self?.reverseGeocodeIfNeeded(for: loc)
+        }
+    }
+}
 
 // MARK: - NOAA/NWS API models
-
-import Foundation
 
 struct NWSAlertsResponse: Decodable {
     let features: [Feature]

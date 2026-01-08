@@ -37,6 +37,29 @@ struct ContentView: View {
 
     // Manual refresh UI state
     @State private var isManualRefreshing = false
+    
+    // MARK: - Refresh gating (Option A)
+ 
+    private let refreshMinInterval: TimeInterval = 12 * 60   // 12 minutes
+
+    private func shouldRefreshNow(last: Date?) -> Bool {
+        guard let last else { return true }
+        return Date().timeIntervalSince(last) > refreshMinInterval
+    }
+
+    private func movedEnough(from old: CLLocationCoordinate2D?, to new: CLLocationCoordinate2D) -> Bool {
+        guard let old else { return true }
+        let dLat = abs(old.latitude - new.latitude)
+        let dLon = abs(old.longitude - new.longitude)
+        return dLat > 0.02 || dLon > 0.02   // ~1–2 miles-ish; adjust as you like
+    }
+
+    private func recordRefresh(coord: CLLocationCoordinate2D?) {
+        lastCurrentRefreshAt = Date()
+        lastRefreshCoord = coord
+        if source == .noaa { lastForecastRefreshAt = Date() }
+    }
+    
 
     // Sheets
     @State private var showingSettings = false
@@ -180,47 +203,41 @@ struct ContentView: View {
         .task {
             location.request()
 
+            // immediate refresh on launch
             viewModel.setLoadingPlaceholders()
-            if source == .noaa {
-                forecastVM.setLoadingPlaceholders()
-            }
+            if source == .noaa { forecastVM.setLoadingPlaceholders() }
             await Task.yield()
 
             await refreshNow()
-            await refreshForecastNow()
+            if source == .noaa { await refreshForecastNow() }
+
+            recordRefresh(coord: location.coordinate)
         }
+        
         .onReceive(location.$coordinate) { coord in
             guard let coord else { return }
             guard selection.selectedFavorite == nil else { return } // don't override favorite pin
-            guard source != .pws else { return }
+            guard source != .pws else { return }                  // PWS isn't tied to GPS here
 
-            // Only refresh if we truly moved enough OR we haven't refreshed yet
-            guard movedEnough(from: lastRefreshCoord, to: coord) || lastCurrentRefreshAt == nil else { return }
+            // Only react if:
+            // - we've never refreshed yet OR
+            // - we're stale OR
+            // - we moved enough (bigger change)
+            let needs = shouldRefreshNow(last: lastCurrentRefreshAt) || movedEnough(from: lastRefreshCoord, to: coord)
+            guard needs else { return }
 
             Task {
                 viewModel.setLoadingPlaceholders()
-
-                if source == .noaa {
-                    forecastVM.setLoadingPlaceholders()
-                }
-
+                if source == .noaa { forecastVM.setLoadingPlaceholders() }
                 await Task.yield()
 
                 await refreshNow()
+                if source == .noaa { await refreshForecastNow() }
 
-                if source == .noaa {
-                    await refreshForecastNow()
-                }
-
-                // ✅ record what we just used
-                lastCurrentRefreshAt = Date()
-                lastRefreshCoord = coord
-
-                if source == .noaa {
-                    lastForecastRefreshAt = Date()
-                }
+                recordRefresh(coord: coord)
             }
         }
+        
         .onReceive(location.$locationName) { name in
             guard selection.selectedFavorite == nil else { return }
             guard let name, !name.isEmpty else { return }
@@ -228,7 +245,24 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            Task { await maybeRefreshOnActive() }
+            guard selection.selectedFavorite == nil else { return } // favorites handled elsewhere
+
+            // Ask iOS for a fresh fix when coming back (one-shot, not continuous)
+            location.refresh()
+
+            // Only refresh weather if we're stale
+            guard shouldRefreshNow(last: lastCurrentRefreshAt) else { return }
+
+            Task {
+                viewModel.setLoadingPlaceholders()
+                if source == .noaa { forecastVM.setLoadingPlaceholders() }
+                await Task.yield()
+
+                await refreshNow()
+                if source == .noaa { await refreshForecastNow() }
+
+                recordRefresh(coord: location.coordinate)
+            }
         }
         .onChange(of: selection.selectedFavorite?.id) { _, _ in
             // favorite/current location changed — refresh immediately
