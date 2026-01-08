@@ -191,12 +191,11 @@ extension LocationManager: CLLocationManagerDelegate {
         // Don’t show an error for transient failures; optional:
         // errorMessage = error.localizedDescription
         isBursting = false
-        print("LOC FAIL:", error)
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
-        print("LOC:", loc.coordinate.latitude, loc.coordinate.longitude, "acc:", loc.horizontalAccuracy)
+//        print("LOC:", loc.coordinate.latitude, loc.coordinate.longitude, "acc:", loc.horizontalAccuracy)
         // Ignore very old cached fixes
         if abs(loc.timestamp.timeIntervalSinceNow) > 30 { return }
 

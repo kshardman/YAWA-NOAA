@@ -586,9 +586,9 @@ struct ContentView: View {
 
     private var bigTempTile: some View {
         VStack(spacing: 10) {
-            Image(systemName: "thermometer")
-                .foregroundStyle(Color.red)
-                .font(tempIconFont)
+//            Image(systemName: "thermometer")
+//                .foregroundStyle(Color.red)
+//                .font(tempIconFont)
 
             Text(viewModel.temp)
                 .font(.system(size: tempFontSize, weight: .semibold))
