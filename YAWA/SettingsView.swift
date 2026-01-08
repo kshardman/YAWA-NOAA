@@ -107,7 +107,17 @@ struct SettingsView: View {
                     Text("Forecasts use NOAA weather.gov.")
                         .foregroundStyle(.secondary)
                 }
-            
+
+#if DEBUG
+Section("Debug") {
+    Button("Clear alert notification history") {
+        NotificationsManager.shared.clearAlertNotificationHistory()
+    }
+    .foregroundStyle(.red)
+}
+#endif
+                
+                
             }
             .task {
                 await notifications.refreshAuthorizationStatus()

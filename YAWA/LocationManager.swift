@@ -369,30 +369,32 @@ final class ForecastViewModel: ObservableObject {
 
     private let service = NOAAService()
     private var lastCoord: CLLocationCoordinate2D?
-    private let notifyStore = AlertNotificationStore()
+//    private let notifyStore = AlertNotificationStore()
     
     @MainActor
     private func notifyOnNewAlerts(locationTitle: String?) async {
         guard !alerts.isEmpty else { return }
 
+        // Notify only the top N to avoid spam if many are active
         for a in alerts.prefix(2) {
-            let id = a.id
+            // Pick a stable id
+            let id = a.id   // (this is the Feature.id string, which you printed earlier)
 
-            if notifyStore.hasNotified(id: id) { continue }
-            notifyStore.markNotified(id: id)
+            // ✅ De-dupe
+            if NotificationsManager.shared.hasNotifiedAlert(id: id) {
+                continue
+            }
+            NotificationsManager.shared.markAlertNotified(id: id)
 
+            // Build title/body from fields you actually have in your model
             let event = a.properties.event
-            let headline = a.properties.headline
-                ?? a.properties.areaDesc
-                ?? ""
+            let headline = a.properties.headline ?? a.properties.areaDesc ?? ""
+            let place = (locationTitle?.isEmpty == false) ? " • \(locationTitle!)" : ""
 
-            let place = (locationTitle?.isEmpty == false)
-                ? " • \(locationTitle!)"
-                : ""
-
-            NotificationService.shared.post(
+            await NotificationsManager.shared.postNewAlertNotification(
                 title: "\(event)\(place)",
-                body: headline
+                body: headline,
+                id: id
             )
         }
     }

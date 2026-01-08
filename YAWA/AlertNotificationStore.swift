@@ -37,4 +37,8 @@ final class AlertNotificationStore {
     private func save(_ ids: Set<String>) {
         UserDefaults.standard.set(Array(ids), forKey: key)
     }
+    
+    func clearAll() {
+        UserDefaults.standard.removeObject(forKey: key)
+    }
 }

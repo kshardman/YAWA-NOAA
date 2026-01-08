@@ -19,11 +19,31 @@ final class NotificationsManager: ObservableObject {
     @Published var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @AppStorage("alertsNotificationsEnabled") var alertsNotificationsEnabled: Bool = true
 
+    private let store = AlertNotificationStore()
+
+    func clearAlertNotificationHistory() {
+        store.clearAll()
+    }
 
     private init() {
         Task { await refreshAuthorizationStatus() }
     }
+ 
+    func hasNotifiedAlert(id: String) -> Bool {
+        store.hasNotified(id: id)
+    }
 
+    func markAlertNotified(id: String) {
+        store.markNotified(id: id)
+    }
+
+    #if DEBUG
+    func clearAlertHistory() {
+        store.clearAll()
+    }
+    #endif
+    
+    
     func refreshAuthorizationStatus() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         authorizationStatus = settings.authorizationStatus
