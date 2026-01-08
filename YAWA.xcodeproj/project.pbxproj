@@ -16,9 +16,22 @@
 		A0E5E3692EEFE266000977B9 /* config.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = config.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A0956D122F0F5A7B00869F7A /* Exceptions for "YAWA" folder in "YAWA" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A0E5E3362EEFD65A000977B9 /* YAWA */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A0E5E3392EEFD65A000977B9 /* YAWA */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A0956D122F0F5A7B00869F7A /* Exceptions for "YAWA" folder in "YAWA" target */,
+			);
 			path = YAWA;
 			sourceTree = "<group>";
 		};
@@ -269,7 +282,6 @@
 				DEVELOPMENT_TEAM = 9WPZ4893L6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = YAWA/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = YAWA;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Show local forecast.";
@@ -283,7 +295,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = kpsorg.iOSWeather;
+				PRODUCT_BUNDLE_IDENTIFIER = kpsorg.yawa;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -307,7 +319,6 @@
 				DEVELOPMENT_TEAM = 9WPZ4893L6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = YAWA/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = YAWA;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Show local forecast.";
@@ -321,7 +332,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = kpsorg.iOSWeather;
+				PRODUCT_BUNDLE_IDENTIFIER = kpsorg.yawa;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

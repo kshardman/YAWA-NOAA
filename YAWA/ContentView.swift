@@ -11,6 +11,14 @@ struct ContentView: View {
     
     // Forecast VM for inline daily forecast list
     @StateObject private var forecastVM = ForecastViewModel()
+    
+    @State private var lastCurrentRefreshAt: Date? = nil
+    @State private var lastForecastRefreshAt: Date? = nil
+    @State private var lastRefreshCoord: CLLocationCoordinate2D? = nil
+
+    private let refreshMaxAge: TimeInterval = 15 * 60   // 15 minutes
+    private let refreshDistanceMeters: CLLocationDistance = 1500 // ~1.5 km
+    
 
     @EnvironmentObject private var favorites: FavoritesStore
     @EnvironmentObject private var selection: LocationSelectionStore
@@ -71,6 +79,53 @@ struct ContentView: View {
         (source == .noaa) && (selection.selectedFavorite == nil)
     }
 
+    private func isStale(_ date: Date?, maxAge: TimeInterval) -> Bool {
+        guard let date else { return true }
+        return Date().timeIntervalSince(date) > maxAge
+    }
+
+    private func movedEnough(from old: CLLocationCoordinate2D?, to new: CLLocationCoordinate2D?) -> Bool {
+        guard let old, let new else { return false }
+        let a = CLLocation(latitude: old.latitude, longitude: old.longitude)
+        let b = CLLocation(latitude: new.latitude, longitude: new.longitude)
+        return a.distance(from: b) >= refreshDistanceMeters
+    }
+    
+    private func maybeRefreshOnActive() async {
+        // Favorites: always refresh immediately on active (they're pinned, not GPS dependent)
+        if let _ = selection.selectedFavorite {
+            viewModel.setLoadingPlaceholders()
+            forecastVM.setLoadingPlaceholders()
+            await Task.yield()
+            await refreshNow()
+            await refreshForecastNow()
+            lastCurrentRefreshAt = Date()
+            lastForecastRefreshAt = Date()
+            return
+        }
+
+        // Current location mode: ask for a fresh location fix first
+        location.request()
+
+        let shouldByAge = isStale(lastCurrentRefreshAt, maxAge: refreshMaxAge)
+        let shouldByMove = movedEnough(from: lastRefreshCoord, to: location.coordinate)
+
+        guard shouldByAge || shouldByMove else { return }
+
+        viewModel.setLoadingPlaceholders()
+        if source == .noaa { forecastVM.setLoadingPlaceholders() }
+        await Task.yield()
+
+        await refreshNow()
+        if source == .noaa { await refreshForecastNow() }
+
+        lastCurrentRefreshAt = Date()
+        lastForecastRefreshAt = Date()
+        lastRefreshCoord = location.coordinate
+    }
+    
+    
+    
     var body: some View {
         ZStack {
             Color(.systemBackground).ignoresSafeArea()
@@ -135,18 +190,35 @@ struct ContentView: View {
             await refreshForecastNow()
         }
         .onReceive(location.$coordinate) { coord in
-            guard coord != nil else { return }
-            guard selection.selectedFavorite == nil else { return } // don’t override favorite pin
+            guard let coord else { return }
+            guard selection.selectedFavorite == nil else { return } // don't override favorite pin
+            guard source != .pws else { return }
+
+            // Only refresh if we truly moved enough OR we haven't refreshed yet
+            guard movedEnough(from: lastRefreshCoord, to: coord) || lastCurrentRefreshAt == nil else { return }
 
             Task {
                 viewModel.setLoadingPlaceholders()
+
                 if source == .noaa {
                     forecastVM.setLoadingPlaceholders()
                 }
+
                 await Task.yield()
 
                 await refreshNow()
-                await refreshForecastNow()
+
+                if source == .noaa {
+                    await refreshForecastNow()
+                }
+
+                // ✅ record what we just used
+                lastCurrentRefreshAt = Date()
+                lastRefreshCoord = coord
+
+                if source == .noaa {
+                    lastForecastRefreshAt = Date()
+                }
             }
         }
         .onReceive(location.$locationName) { name in
@@ -156,17 +228,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-
-            Task {
-                viewModel.setLoadingPlaceholders()
-                if source == .noaa {
-                    forecastVM.setLoadingPlaceholders()
-                }
-                await Task.yield()
-
-                await refreshNow()
-                await refreshForecastNow()
-            }
+            Task { await maybeRefreshOnActive() }
         }
         .onChange(of: selection.selectedFavorite?.id) { _, _ in
             // favorite/current location changed — refresh immediately
@@ -202,7 +264,7 @@ struct ContentView: View {
         }
 
         // 🔹 Navigation + toolbar MUST be attached here
-        .navigationTitle("Nimbus")
+        .navigationTitle("YAWA")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {

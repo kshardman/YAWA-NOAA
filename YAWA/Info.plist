@@ -6,6 +6,8 @@
 	<array>
 		<string>kpsorg.iOSWeather.refresh</string>
 	</array>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string></string>

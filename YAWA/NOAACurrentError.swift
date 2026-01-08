@@ -110,7 +110,7 @@ final class NOAACurrentConditionsService {
 
     private func applyNOAAHeaders(_ req: inout URLRequest) {
         // NOAA asks for a valid User-Agent. Keep it consistent.
-        req.setValue("Nimbus (personal app)", forHTTPHeaderField: "User-Agent")
+        req.setValue("YAWA (personal app)", forHTTPHeaderField: "User-Agent")
         req.setValue("application/geo+json", forHTTPHeaderField: "Accept")
     }
 
