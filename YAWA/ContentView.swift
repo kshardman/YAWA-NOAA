@@ -585,20 +585,29 @@ struct ContentView: View {
     }
 
     private var bigTempTile: some View {
-        VStack(spacing: 10) {
-//            Image(systemName: "thermometer")
-//                .foregroundStyle(Color.red)
-//                .font(tempIconFont)
+        ZStack(alignment: .top) {
 
-            Text(viewModel.temp)
-                .font(.system(size: tempFontSize, weight: .semibold))
-                .monospacedDigit()
-                .minimumScaleFactor(0.6)
-                .lineLimit(1)
+            // Temperature centered vertically
+            VStack {
+                Spacer(minLength: 0)
+
+                Text(viewModel.temp)
+                    .font(Font.system(size: tempFontSize, weight: .semibold))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+
+            // Thermometer icon “floats” near the top
+            Image(systemName: "thermometer")
+                .foregroundStyle(.red)
+                .font(tempIconFont)
+                .padding(.top, 10)
         }
         .frame(maxWidth: .infinity)
-        .frame(minHeight: bigMinHeight)
-        .padding(.vertical, 8)
+        .frame(height: bigMinHeight * 1.15)          // ✅ lock height (not minHeight)
         .background(tileBackground)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
