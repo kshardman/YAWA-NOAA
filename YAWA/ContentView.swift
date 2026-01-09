@@ -27,12 +27,33 @@ struct ContentView: View {
     
     @State private var selectedDetail: DetailPayload?
 
+    private enum DetailBody {
+        case text(String)
+        case alert(description: String?, instructions: [String], severity: String?)
+    }
+
     private struct DetailPayload: Identifiable {
         let id = UUID()
         let title: String
-        let body: String
-    }
+        let body: DetailBody
 
+        init(title: String, body: String) {
+            self.title = title
+            self.body = .text(body)
+        }
+
+        init(title: String, description: String?, instructions: [String], severity: String?) {
+            self.title = title
+            self.body = .alert(description: description, instructions: instructions, severity: severity)
+        }
+    }
+    
+    struct AlertSection: Identifiable {
+        let id = UUID()
+        let title: String
+        let paragraphs: [String]
+    }
+    
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var dyn
@@ -169,7 +190,7 @@ struct ContentView: View {
 
                 tilesSection
 
-                // MARK: Inline daily forecast (NOAA only) — scrolls under tiles
+// MARK: Inline daily forecast (NOAA only) — scrolls under tiles
                 if source == .noaa {
 
                     // Optional: keep the title “anchored” (so it doesn’t scroll away)
@@ -342,14 +363,83 @@ struct ContentView: View {
         .sheet(item: $selectedDetail) { detail in
             NavigationStack {
                 ScrollView {
-                    Text(detail.body)
-                        .font(.callout)
-                        .foregroundStyle(.primary)
-                        .lineSpacing(6)
-                        .multilineTextAlignment(.leading)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
+                    VStack(alignment: .leading, spacing: 16) {
+
+                        switch detail.body {
+
+                        case .text(let text):
+                            Text(text)
+                                .font(.callout)
+                                .foregroundStyle(.primary)
+                                .lineSpacing(6)
+                                .multilineTextAlignment(.leading)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                        case .alert(let description, let instructions, let severity):
+
+                            // MAIN NARRATIVE (WHAT / WHEN / IMPACTS / ADDITIONAL DETAILS)
+                            if let description, !description.isEmpty {
+                                let sections = parseAlertNarrativeSections(from: description)
+
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(sections) { s in
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            if let label = s.label {
+                                                Text(label)
+                                                    .font(.headline)
+                                            }
+
+                                            Text(s.body)
+                                                .font(.callout)
+                                                .foregroundStyle(.primary)
+                                                .lineSpacing(6)
+                                                .multilineTextAlignment(.leading)
+                                                .textSelection(.enabled)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // WHAT TO DO — proper bullets
+                            if !instructions.isEmpty {
+                                Text("What to do")
+                                    .font(.headline)
+                                    .padding(.top, description == nil ? 0 : 4)
+
+                                VStack(alignment: .leading, spacing: 10) {
+                                    ForEach(instructions, id: \.self) { item in
+                                        let cleaned = stripLeadingBullet(item)
+
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Text("•")
+                                                .font(.callout.weight(.semibold))
+                                                .padding(.top, 1)
+
+                                            Text(cleaned)
+                                                .font(.callout)
+                                                .foregroundStyle(.primary)
+                                                .lineSpacing(4)
+                                                .multilineTextAlignment(.leading)
+                                                .textSelection(.enabled)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // SEVERITY FOOTER
+                            if let severity, !severity.isEmpty {
+                                Divider().padding(.top, 6)
+
+                                Text("Severity: \(severity)")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(16)
                 }
                 .navigationTitle(detail.title)
                 .navigationBarTitleDisplayMode(.inline)
@@ -401,14 +491,6 @@ struct ContentView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-
-//            UpdatedStatusRow(
-//                text: isManualRefreshing ? "Refreshing…" : viewModel.lastUpdatedText,
-//                isRefreshing: isManualRefreshing,
-//                color: .secondary
-//            )
-//            .animation(.easeInOut(duration: 0.25), value: isManualRefreshing)
-//            .animation(.easeInOut(duration: 0.25), value: viewModel.lastUpdated)
 
             if !networkMonitor.isOnline {
                 pill("Offline — showing last update", "wifi.slash")
@@ -498,44 +580,29 @@ struct ContentView: View {
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .contentShape(Rectangle())
+
+//  MARK: ONTAP
+
                 .onTapGesture {
                     let p = top.properties
-                    var blocks: [String] = []
 
-                    // 1) Main narrative (WHAT / WHEN / IMPACTS)
-                    if let desc = p.descriptionText, !desc.isEmpty {
+                    let description: String? = {
+                        guard let desc = p.descriptionText, !desc.isEmpty else { return nil }
                         let formatted = normalizeParagraphNewlines(formatNOAAAlertBody(desc))
-                        if !formatted.isEmpty {
-                            blocks.append(formatted)
-                        }
-                    }
+                        return formatted.isEmpty ? nil : formatted
+                    }()
 
-                    // 2) Instructions (WHAT TO DO)
-                    
-                    if let instr = p.instructionText, !instr.isEmpty {
-  //                      print("RAW INSTR:", instr)
+                    let instructions: [String] = {
+                        guard let instr = p.instructionText, !instr.isEmpty else { return [] }
                         let formattedInstr = formatNOAAInstructions(instr)
-                        if !formattedInstr.isEmpty {
-                            blocks.append("What to do:\n" + formattedInstr)
-                        }
-                    }
-
-                    // 3) Optional metadata (keep last, low priority)
-                    var meta: [String] = []
-                    if let sev = p.severity, !sev.isEmpty {
-                        meta.append("Severity: \(sev)")
-                    }
-                    if !meta.isEmpty {
-                        blocks.append(meta.joined(separator: "\n"))
-                    }
-
-                    if blocks.isEmpty {
-                        blocks.append(p.event)
-                    }
+                        return parseInstructionItems(from: formattedInstr)
+                    }()
 
                     selectedDetail = DetailPayload(
                         title: p.event,
-                        body: blocks.joined(separator: "\n\n")
+                        description: description,
+                        instructions: instructions,
+                        severity: p.severity
                     )
                 }
             }
@@ -894,7 +961,137 @@ struct ContentView: View {
     }
 
     // MARK: - UI helpers
+    private struct LabeledBlock: Identifiable, Hashable {
+        let id = UUID()
+        let title: String      // e.g. "What", "When", "Impacts"
+        let text: String
+    }
 
+    private func parseLabeledBlocks(from description: String) -> [LabeledBlock] {
+        // Normalize line endings + collapse weird wraps
+        let cleaned = description
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\n", with: " ")     // NOAA wraps aggressively
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // We’ll look for these “LABEL...text” segments
+        let labels: [(key: String, title: String)] = [
+            ("WHAT...", "What"),
+            ("WHEN...", "When"),
+            ("WHERE...", "Where"),
+            ("IMPACTS...", "Impacts"),
+            ("ADDITIONAL DETAILS...", "Additional details")
+        ]
+
+        // Find all label positions
+        var hits: [(start: Int, key: String, title: String)] = []
+        for (key, title) in labels {
+            var searchStart = cleaned.startIndex
+            while let range = cleaned.range(of: key, range: searchStart..<cleaned.endIndex) {
+                let idx = cleaned.distance(from: cleaned.startIndex, to: range.lowerBound)
+                hits.append((idx, key, title))
+                searchStart = range.upperBound
+            }
+        }
+
+        hits.sort { $0.start < $1.start }
+        guard !hits.isEmpty else {
+            return cleaned.isEmpty ? [] : [LabeledBlock(title: "Details", text: cleaned)]
+        }
+
+        func slice(_ from: Int, _ to: Int) -> String {
+            let s = cleaned.index(cleaned.startIndex, offsetBy: from)
+            let e = cleaned.index(cleaned.startIndex, offsetBy: to)
+            return String(cleaned[s..<e]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        var blocks: [LabeledBlock] = []
+
+        for i in 0..<hits.count {
+            let cur = hits[i]
+            let nextStart = (i + 1 < hits.count) ? hits[i + 1].start : cleaned.count
+
+            // Skip the label itself
+            let labelEnd = cur.start + cur.key.count
+            if labelEnd >= nextStart { continue }
+
+            var body = slice(labelEnd, nextStart)
+            body = body.trimmingCharacters(in: CharacterSet(charactersIn: " .-"))
+
+            if !body.isEmpty {
+                blocks.append(LabeledBlock(title: cur.title, text: body))
+            }
+        }
+
+        return blocks
+    }
+    private func parseInstructionItems(from formatted: String) -> [String] {
+        // Goal: produce clean bullet items with NO mid-sentence bullets.
+        // We treat blank lines as separators (NOAA instructions are usually paragraph separated).
+
+        let cleaned = formatted
+            .replacingOccurrences(of: "\r", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleaned.isEmpty else { return [] }
+
+        // Split into chunks by blank lines
+        let chunks = cleaned
+            .components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        // Each chunk becomes one bullet item; collapse internal newlines to spaces
+        return chunks.map { chunk in
+            chunk
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+    }
+    
+    func parseAlertSections(from text: String) -> [AlertSection] {
+        let cleaned = text
+            .replacingOccurrences(of: "\r", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let patterns = [
+            ("WHAT", "WHAT"),
+            ("WHEN", "WHEN"),
+            ("IMPACTS", "IMPACTS")
+        ]
+
+        var sections: [AlertSection] = []
+
+        for (key, title) in patterns {
+            if let range = cleaned.range(of: "\(key)...") {
+                let start = range.upperBound
+                let remainder = cleaned[start...]
+
+                let end = patterns
+                    .compactMap { cleaned.range(of: "\($0.0)...", range: start..<cleaned.endIndex)?.lowerBound }
+                    .min() ?? cleaned.endIndex
+
+                let body = cleaned[start..<end]
+                    .replacingOccurrences(of: "\n\n", with: "\n")
+                    .split(separator: "\n")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+
+                if !body.isEmpty {
+                    sections.append(
+                        AlertSection(title: title.capitalized, paragraphs: body)
+                    )
+                }
+            }
+        }
+
+        return sections
+    }
+    
     private func normalizeParagraphNewlines(_ s: String) -> String {
         // 1) Normalize line endings
         var t = s.replacingOccurrences(of: "\r\n", with: "\n")
@@ -1137,6 +1334,75 @@ struct ContentView: View {
         .clipShape(Capsule())
     }
 }
+
+private struct AlertSection: Identifiable {
+    let id = UUID()
+    let label: String?
+    let body: String
+}
+
+private func stripLeadingBullet(_ s: String) -> String {
+    var t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // remove common leading bullet styles NOAA text sometimes includes
+    while t.hasPrefix("•") || t.hasPrefix("-") || t.hasPrefix("• ") || t.hasPrefix("- ") {
+        t = t
+            .replacingOccurrences(of: "•", with: "", options: .anchored)
+            .replacingOccurrences(of: "-", with: "", options: .anchored)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return t
+}
+
+/// Parses NOAA-style narrative like:
+/// "WHAT...text\n\nWHEN...text\n\nIMPACTS...text"
+private func parseAlertNarrativeSections(from text: String) -> [AlertSection] {
+    let normalized = text
+        .replacingOccurrences(of: "\r\n", with: "\n")
+        .replacingOccurrences(of: "\r", with: "\n")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // labels you care about (add more if you want)
+    let labels = ["WHAT", "WHEN", "IMPACTS", "ADDITIONAL DETAILS", "PRECAUTIONARY/PREPAREDNESS ACTIONS"]
+    let labelPattern = labels.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+
+    // Match: LABEL... body (until next LABEL... or end)
+    let pattern = #"(?s)(?:^|\n)\s*(\#(labelPattern))\s*\.{3}\s*(.*?)(?=(?:\n\s*(?:\#(labelPattern))\s*\.{3})|\z)"#
+
+    guard let re = try? NSRegularExpression(pattern: pattern, options: []) else {
+        return [AlertSection(label: nil, body: normalized)]
+    }
+
+    let ns = normalized as NSString
+    let matches = re.matches(in: normalized, options: [], range: NSRange(location: 0, length: ns.length))
+
+    if matches.isEmpty {
+        return [AlertSection(label: nil, body: normalized)]
+    }
+
+    var out: [AlertSection] = []
+
+    for m in matches {
+        let rawLabel = ns.substring(with: m.range(at: 1))
+        let rawBody = ns.substring(with: m.range(at: 2))
+
+        let label = rawLabel
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .capitalized
+
+        let body = rawBody
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !body.isEmpty {
+            out.append(AlertSection(label: "\(label)…", body: body))
+        }
+    }
+
+    return out.isEmpty ? [AlertSection(label: nil, body: normalized)] : out
+}
+
 
 
 private struct InlineAlertRow: View {
