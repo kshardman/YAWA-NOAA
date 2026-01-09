@@ -1027,31 +1027,51 @@ struct ContentView: View {
 
         return blocks
     }
-    private func parseInstructionItems(from formatted: String) -> [String] {
-        // Goal: produce clean bullet items with NO mid-sentence bullets.
-        // We treat blank lines as separators (NOAA instructions are usually paragraph separated).
+    func parseInstructionItems(from text: String) -> [String] {
+        // Normalize line endings and collapse weird spacing
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
 
-        let cleaned = formatted
-            .replacingOccurrences(of: "\r", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !cleaned.isEmpty else { return [] }
-
-        // Split into chunks by blank lines
-        let chunks = cleaned
+        // 1) Split into rough paragraphs first (blank lines)
+        let paragraphs = normalized
             .components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
-        // Each chunk becomes one bullet item; collapse internal newlines to spaces
-        return chunks.map { chunk in
-            chunk
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
+        var items: [String] = []
+
+        for para in paragraphs {
+            // 2) Within each paragraph, NOAA sometimes uses inline bullets like " ... . • Next thing ..."
+            // Split on "•" anywhere, not just at line starts.
+            let parts = para
+                .components(separatedBy: "•")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
-                .joined(separator: " ")
+
+            for part in parts {
+                // 3) Also split on leading "-" list style if present (rare)
+                // but DON'T break normal hyphens inside sentences.
+                if part.hasPrefix("-") {
+                    let cleaned = part.drop(while: { $0 == "-" || $0 == " " })
+                    let s = String(cleaned).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !s.isEmpty { items.append(s) }
+                } else {
+                    items.append(part)
+                }
+            }
         }
+
+        // 4) Final cleanup: remove any accidental leading bullets/dashes and collapse internal newlines
+        let cleaned = items
+            .map { $0.replacingOccurrences(of: "\n", with: " ") }
+            .map { $0.replacingOccurrences(of: "  ", with: " ") }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return cleaned
     }
+
     
     func parseAlertSections(from text: String) -> [AlertSection] {
         let cleaned = text

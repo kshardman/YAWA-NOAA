@@ -76,5 +76,14 @@ extension Double {
     }
 }
 
+private extension Substring {
+    func drop(while predicate: (Character) -> Bool) -> Substring {
+        var i = startIndex
+        while i < endIndex, predicate(self[i]) {
+            i = index(after: i)
+        }
+        return self[i...]
+    }
+}
 
 
