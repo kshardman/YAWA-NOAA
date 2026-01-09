@@ -15,6 +15,8 @@ struct ContentView: View {
     @State private var lastCurrentRefreshAt: Date? = nil
     @State private var lastForecastRefreshAt: Date? = nil
     @State private var lastRefreshCoord: CLLocationCoordinate2D? = nil
+    
+    @State private var pendingForegroundRefresh = false
 
     private let refreshMaxAge: TimeInterval = 15 * 60   // 15 minutes
     private let refreshDistanceMeters: CLLocationDistance = 1500 // ~1.5 km
@@ -103,7 +105,7 @@ struct ContentView: View {
 
     private var headerLocationText: String {
         if source == .pws { return "" } // don’t show stale NOAA location in PWS mode
-        return selection.selectedFavorite?.displayName ?? viewModel.currentLocationLabel
+        return selection.selectedFavorite?.displayName ?? (location.locationName ?? "Current Location")
     }
 
     private var showCurrentLocationGlyph: Bool {
@@ -246,17 +248,18 @@ struct ContentView: View {
         
         .onReceive(location.$coordinate) { coord in
             guard let coord else { return }
-            guard selection.selectedFavorite == nil else { return } // don't override favorite pin
-            guard source != .pws else { return }                  // PWS isn't tied to GPS here
+            guard selection.selectedFavorite == nil else { return }
+            guard source != .pws else { return }
 
-            // Only react if:
-            // - we've never refreshed yet OR
-            // - we're stale OR
-            // - we moved enough (bigger change)
-            let needs = shouldRefreshNow(last: lastCurrentRefreshAt) || movedEnough(from: lastRefreshCoord, to: coord)
+            let needs = pendingForegroundRefresh
+                || shouldRefreshNow(last: lastCurrentRefreshAt)
+                || movedEnough(from: lastRefreshCoord, to: coord)
+
             guard needs else { return }
 
             Task {
+                pendingForegroundRefresh = false
+
                 viewModel.setLoadingPlaceholders()
                 if source == .noaa { forecastVM.setLoadingPlaceholders() }
                 await Task.yield()
@@ -268,31 +271,17 @@ struct ContentView: View {
             }
         }
         
-        .onReceive(location.$locationName) { name in
-            guard selection.selectedFavorite == nil else { return }
-            guard let name, !name.isEmpty else { return }
-            viewModel.currentLocationLabel = name
-        }
+ //       .onReceive(location.$locationName) { name in
+ //           guard selection.selectedFavorite == nil else { return }
+//            guard let name, !name.isEmpty else { return }
+  //          viewModel.currentLocationLabel = name
+//        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             guard selection.selectedFavorite == nil else { return } // favorites handled elsewhere
 
-            // Ask iOS for a fresh fix when coming back (one-shot, not continuous)
-            location.refresh()
-
-            // Only refresh weather if we're stale
-            guard shouldRefreshNow(last: lastCurrentRefreshAt) else { return }
-
-            Task {
-                viewModel.setLoadingPlaceholders()
-                if source == .noaa { forecastVM.setLoadingPlaceholders() }
-                await Task.yield()
-
-                await refreshNow()
-                if source == .noaa { await refreshForecastNow() }
-
-                recordRefresh(coord: location.coordinate)
-            }
+            pendingForegroundRefresh = true
+            location.refresh()   // one-shot location request
         }
         .onChange(of: selection.selectedFavorite?.id) { _, _ in
             // favorite/current location changed — refresh immediately
@@ -858,27 +847,22 @@ struct ContentView: View {
 
     // MARK: - Async refresh
 
-    private func refreshNow(showPlaceholders: Bool = false) async {
-        if showPlaceholders {
-            viewModel.setLoadingPlaceholders()
-            if source == .noaa {
-                forecastVM.setLoadingPlaceholders()
-            }
-            // Give SwiftUI a chance to paint the placeholders
-            await Task.yield()
-        }
-
+    private func refreshNow() async {
         if let f = selection.selectedFavorite {
+            // Favorites always imply NOAA
             await viewModel.fetchCurrentFromNOAA(
                 lat: f.coordinate.latitude,
                 lon: f.coordinate.longitude,
                 locationName: f.displayName
             )
         } else {
+            // ✅ Clean architecture:
+            // In current-location (GPS) mode, do NOT pass a locationName into the fetch.
+            // LocationManager's reverse geocode owns the header label, preventing stale “snap back”.
             await viewModel.refreshCurrentConditions(
                 source: source,
                 coord: location.coordinate,
-                locationName: location.locationName
+                locationName: nil
             )
         }
     }

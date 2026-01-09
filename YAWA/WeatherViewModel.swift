@@ -168,7 +168,7 @@ final class WeatherViewModel: ObservableObject {
             await fetchCurrentFromNOAA(
                 lat: coord.latitude,
                 lon: coord.longitude,
-                locationName: locationName ?? currentLocationLabel
+                locationName: locationName   // ✅ do NOT fall back to currentLocationLabel
             )
 
         case .pws:
@@ -302,8 +302,6 @@ final class WeatherViewModel: ObservableObject {
             lastUpdated = Date()
             lastSuccess = Date()
 
-            // ✅ Only update the label when we have a real city/state.
-            // Never overwrite a good label with the fallback.
             if let locationName, !locationName.isEmpty {
                 currentLocationLabel = locationName
             } else if currentLocationLabel.isEmpty {
