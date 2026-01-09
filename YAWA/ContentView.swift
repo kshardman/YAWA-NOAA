@@ -44,7 +44,7 @@ struct ContentView: View {
 
     private func triggerEasterEgg() {
         showEasterEgg = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
             showEasterEgg = false
         }
     }
@@ -210,7 +210,7 @@ struct ContentView: View {
                 VStack {
                     Spacer().frame(height: 10)
 
-                    Text("YAWA ✨ Yet Another Weather App")
+                    Text("Yawa ✨ Yet Another Weather App")
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -320,7 +320,7 @@ struct ContentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("YAWA")
+                Text("Yawa")
                     .font(.headline)
                     .onLongPressGesture(minimumDuration: 1.0) {
                         triggerEasterEgg()

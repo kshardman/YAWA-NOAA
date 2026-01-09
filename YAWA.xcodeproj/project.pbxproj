@@ -284,7 +284,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = YAWA/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = YAWA;
+				INFOPLIST_KEY_CFBundleDisplayName = Yawa;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Show local forecast.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -323,7 +323,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = YAWA/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = YAWA;
+				INFOPLIST_KEY_CFBundleDisplayName = Yawa;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Show local forecast.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
