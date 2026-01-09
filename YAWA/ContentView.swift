@@ -744,8 +744,8 @@ struct ContentView: View {
 
                                     Spacer()
 
-                                    Image(systemName: "star.fill")
-                                        .foregroundStyle(.yellow)
+                                    Image(systemName: "star")
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                         }
