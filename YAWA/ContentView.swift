@@ -500,30 +500,42 @@ struct ContentView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     let p = top.properties
+                    var blocks: [String] = []
 
-                    var lines: [String] = []
-
-                    // Event is the title; include headline + area + severity in body
-                    if let headline = p.headline, !headline.isEmpty {
-                        lines.append(headline)
+                    // 1) Main narrative (WHAT / WHEN / IMPACTS)
+                    if let desc = p.descriptionText, !desc.isEmpty {
+                        let formatted = normalizeParagraphNewlines(formatNOAAAlertBody(desc))
+                        if !formatted.isEmpty {
+                            blocks.append(formatted)
+                        }
                     }
 
-                    if let area = p.areaDesc, !area.isEmpty {
-                        lines.append("Area:\n\(area)")
+                    // 2) Instructions (WHAT TO DO)
+                    
+                    if let instr = p.instructionText, !instr.isEmpty {
+  //                      print("RAW INSTR:", instr)
+                        let formattedInstr = formatNOAAInstructions(instr)
+                        if !formattedInstr.isEmpty {
+                            blocks.append("What to do:\n" + formattedInstr)
+                        }
                     }
 
+                    // 3) Optional metadata (keep last, low priority)
+                    var meta: [String] = []
                     if let sev = p.severity, !sev.isEmpty {
-                        lines.append("Severity: \(sev)")
+                        meta.append("Severity: \(sev)")
+                    }
+                    if !meta.isEmpty {
+                        blocks.append(meta.joined(separator: "\n"))
                     }
 
-                    // Fallback if nothing else exists
-                    if lines.isEmpty {
-                        lines.append(p.event)
+                    if blocks.isEmpty {
+                        blocks.append(p.event)
                     }
 
                     selectedDetail = DetailPayload(
                         title: p.event,
-                        body: lines.joined(separator: "\n\n")
+                        body: blocks.joined(separator: "\n\n")
                     )
                 }
             }
@@ -883,6 +895,215 @@ struct ContentView: View {
 
     // MARK: - UI helpers
 
+    private func normalizeParagraphNewlines(_ s: String) -> String {
+        // 1) Normalize line endings
+        var t = s.replacingOccurrences(of: "\r\n", with: "\n")
+                 .replacingOccurrences(of: "\r", with: "\n")
+
+        // 2) Split into paragraphs on blank lines
+        let paragraphs = t
+            .components(separatedBy: CharacterSet.newlines)
+            .split(whereSeparator: { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+            .map { lines -> String in
+                // Join line-wrapped content into one paragraph line
+                lines
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+            }
+
+        // 3) Re-join paragraphs with a single blank line between
+        t = paragraphs.joined(separator: "\n\n")
+
+        // 4) Collapse repeated spaces
+        while t.contains("  ") { t = t.replacingOccurrences(of: "  ", with: " ") }
+
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func formatNOAAAlertBody(_ raw: String) -> String {
+        // Normalize line endings
+        let s = raw
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        // Split + trim + strip leading "*" / "•"
+        let lines = s
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { line -> String in
+                var l = line
+                while l.hasPrefix("*") || l.hasPrefix("•") {
+                    l.removeFirst()
+                    l = l.trimmingCharacters(in: .whitespaces)
+                }
+                return l
+            }
+
+        // Section detection (NOAA uses WHAT... WHERE... WHEN... IMPACTS... etc)
+        func sectionHeader(_ line: String) -> String? {
+            let upper = line.uppercased()
+
+            // Typical NOAA pattern: "WHAT..." / "WHERE..." / "WHEN..." / "IMPACTS..."
+            let known = ["WHAT...", "WHERE...", "WHEN...", "IMPACTS...", "HAZARD...", "SOURCE...", "INFO..."]
+            for k in known where upper.hasPrefix(k) { return k }
+
+            // Also handle "What:" style
+            if upper.hasPrefix("WHAT:") { return "WHAT..." }
+            if upper.hasPrefix("WHERE:") { return "WHERE..." }
+            if upper.hasPrefix("WHEN:") { return "WHEN..." }
+            if upper.hasPrefix("IMPACTS:") { return "IMPACTS..." }
+
+            return nil
+        }
+
+        var outBlocks: [String] = []
+        var currentLines: [String] = []
+        var skippingWhere = false
+
+        func flush() {
+            let joined = currentLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joined.isEmpty { outBlocks.append(joined) }
+            currentLines.removeAll()
+        }
+
+        for line in lines {
+            if line.isEmpty {
+                // treat blank lines as paragraph separators
+                flush()
+                continue
+            }
+
+            if let header = sectionHeader(line) {
+                // whenever we hit a header, end prior block
+                flush()
+
+                // Start/stop WHERE skipping
+                if header == "WHERE..." {
+                    skippingWhere = true
+                    continue
+                } else {
+                    // leaving WHERE section when we hit the next known header
+                    skippingWhere = false
+                }
+
+                // Keep WHAT/WHEN/IMPACTS headers in-line (but without bullets)
+                // Example: "WHAT...Cold..." stays as one paragraph.
+                currentLines.append(line)
+                continue
+            }
+
+            // If we are inside WHERE, drop ALL lines until next header
+            if skippingWhere {
+                continue
+            }
+
+            currentLines.append(line)
+        }
+
+        flush()
+
+        // Final cleanup: collapse repeated spaces
+        let cleaned = outBlocks
+            .map { $0.replacingOccurrences(of: #"[\t ]+"#, with: " ", options: .regularExpression) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return cleaned.joined(separator: "\n\n")
+    }
+
+    private func normalizeInlineSpacing(_ s: String) -> String {
+        // Collapse repeated spaces
+        var out = s.replacingOccurrences(of: #"[\t ]+"#, with: " ", options: .regularExpression)
+
+        // Remove weird space before punctuation
+        out = out.replacingOccurrences(of: " .", with: ".")
+                 .replacingOccurrences(of: " ,", with: ",")
+                 .replacingOccurrences(of: " ;", with: ";")
+                 .replacingOccurrences(of: " :", with: ":")
+
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func formatNOAAInstructions(_ raw: String) -> String {
+        // 1) Normalize newlines
+        var s = raw.replacingOccurrences(of: "\r\n", with: "\n")
+        s = s.replacingOccurrences(of: "\r", with: "\n")
+
+        // 2) Split into paragraphs on blank lines
+        let paragraphs = s
+            .components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        // 3) For each paragraph:
+        //    - remove any leading bullets/stars/dashes on each line
+        //    - join hard-wrapped lines into one line
+        //    - collapse extra spaces
+        let cleaned: [String] = paragraphs.map { para in
+            let lines = para
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .map { line in
+                    // Strip common NOAA list markers if present
+                    line
+                        .replacingOccurrences(of: #"^[\*\-\u2022]+\s*"#, with: "", options: .regularExpression)
+                        .replacingOccurrences(of: #"^\(\d+\)\s*"#, with: "", options: .regularExpression) // (1) style
+                }
+
+            // Join wrapped lines into one paragraph
+            var joined = lines.joined(separator: " ")
+
+            // Collapse repeated spaces
+            joined = joined.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+
+            return joined
+        }
+
+        // 4) Bullet each paragraph
+        return cleaned.map { "• \($0)" }.joined(separator: "\n")
+    }
+
+    private func normalizeLines(_ raw: String) -> [String] {
+        raw
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { String($0) }
+    }
+
+    private func bulletizeNOAAStarLine(_ trimmedLine: String) -> String? {
+        guard trimmedLine.hasPrefix("*") else { return nil }
+
+        var s = trimmedLine
+        s.removeFirst()
+        s = s.trimmingCharacters(in: .whitespaces)
+
+        if let r = s.range(of: "...") {
+            let label = s[..<r.lowerBound]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased()
+
+            if label == "WHERE" { return nil }   // ✅ drop WHERE
+
+            let value = s[r.upperBound...]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !label.isEmpty, !value.isEmpty else { return nil }
+            return "• \(label.capitalized): \(value)"
+        }
+
+        return "• \(s)"
+    }
+
+    private func isAllCapsHeader(_ s: String) -> Bool {
+        // Heuristic: mostly letters/spaces and already uppercase
+        let letters = s.filter { $0.isLetter }
+        guard letters.count >= 4 else { return false }
+        return letters.allSatisfy { String($0) == String($0).uppercased() }
+    }
+    
     private func cardBackground() -> some View {
         RoundedRectangle(cornerRadius: 22, style: .continuous)
             .fill(Color(.tertiarySystemBackground))
@@ -1059,6 +1280,9 @@ private struct LocationsSheet: View {
 //        .animation(.easeInOut(duration: 0.2), value: isRefreshing)
 //    }
 // }
+
+
+
 
 private func successHaptic() {
     let gen = UINotificationFeedbackGenerator()

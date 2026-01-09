@@ -240,6 +240,17 @@ struct NWSAlertsResponse: Decodable {
         let severity: String?
         let headline: String?
         let areaDesc: String?
+        let descriptionText: String?
+        let instructionText: String?
+
+        enum CodingKeys: String, CodingKey {
+            case event
+            case severity
+            case headline
+            case areaDesc
+            case descriptionText = "description"
+            case instructionText = "instruction"
+        }
     }
 }
 
