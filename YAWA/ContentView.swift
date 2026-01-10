@@ -540,12 +540,6 @@ struct ContentView: View {
 
             // Header row (centered title + spinner on right)
             ZStack {
-//                Text("Daily Forecast")
-//                    .font(.title3.weight(.semibold))
- //                   .foregroundStyle(.primary)
-//                    .frame(maxWidth: .infinity)
-//                    .multilineTextAlignment(.center)
-
                 HStack {
                     Spacer()
                     if forecastVM.isLoading && forecastVM.periods.isEmpty {
@@ -560,7 +554,6 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Alerts & Advisories
             // Alerts & Advisories (tap to expand)
             if let top = forecastVM.alerts.first {
                 VStack(alignment: .leading, spacing: 6) {
@@ -580,9 +573,6 @@ struct ContentView: View {
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .contentShape(Rectangle())
-
-//  MARK: ONTAP
-
                 .onTapGesture {
                     let p = top.properties
 
@@ -606,21 +596,24 @@ struct ContentView: View {
                     )
                 }
             }
-            // Forecast rows (restored)
+
+            // Forecast rows
             if !forecastVM.periods.isEmpty {
-                let days = Array(combineDayNight(Array(forecastVM.periods.prefix(14))).prefix(7))
 
-                let sideCol: CGFloat = 120   // tweak 110–140 to taste
+                let sideCol: CGFloat = 120 // tweak 110–140 to taste
+                let forecastDays: [DailyForecast] =
+                    Array(combineDayNight(Array(forecastVM.periods.prefix(14))).prefix(7))
 
-                ForEach(days) { d in
+                ForEach(forecastDays, id: \.id) { d in
                     let sym = forecastSymbolAndColor(for: d.day.shortForecast, isDaytime: true)
 
                     HStack(spacing: 10) {
 
                         // Left column (fixed)
                         HStack(spacing: 6) {
-                            Text(abbreviatedDayName(d.name))
+                            Text(weekdayLabel(d.startDate))
                                 .font(.headline)
+
                             Text(d.dateText)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
@@ -653,7 +646,6 @@ struct ContentView: View {
                             .monospacedDigit()
                             .frame(width: sideCol, alignment: .trailing)
                     }
-                    // ✅ SNIPPET 2: make the whole row tappable and set selectedDetail
                     .contentShape(Rectangle())
                     .onTapGesture {
                         let dayText = (d.day.detailedForecast ?? d.day.shortForecast)
@@ -681,12 +673,11 @@ struct ContentView: View {
                             severity: nil
                         )
                     }
-                    .padding(.vertical, 4)
 
-                    if d.id != days.last?.id {
-                        Divider().opacity(0.35)
-                    }
+                    // If you want dividers between rows, add them here:
+                    // if d.id != forecastDays.last?.id { Divider().opacity(0.35) }
                 }
+
             } else if !forecastVM.isLoading {
                 Text("No forecast yet.")
                     .font(.subheadline)
@@ -969,6 +960,15 @@ struct ContentView: View {
     }
 
     // MARK: - UI helpers
+    
+    private func weekdayLabel(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = .current
+        f.setLocalizedDateFormatFromTemplate("EEE") // Mon, Tue, etc.
+        return f.string(from: date)
+    }
+    
+    
     private struct LabeledBlock: Identifiable, Hashable {
         let id = UUID()
         let title: String      // e.g. "What", "When", "Impacts"
