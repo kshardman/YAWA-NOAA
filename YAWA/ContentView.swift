@@ -656,21 +656,29 @@ struct ContentView: View {
                     // ✅ SNIPPET 2: make the whole row tappable and set selectedDetail
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        let dayText = d.day.detailedForecast ?? d.day.shortForecast
-                        let nightText = d.night?.detailedForecast
+                        let dayText = (d.day.detailedForecast ?? d.day.shortForecast)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-                        let body: String
-                        if let nightText,
-                           !nightText.isEmpty,
-                           nightText != dayText {
-                            body = "Day: \(dayText)\n\nNight: \(nightText)"
-                        } else {
-                            body = dayText
+                        let nightText = (d.night?.detailedForecast ?? "")
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                        var parts: [String] = []
+
+                        if !dayText.isEmpty {
+                            parts.append("Day...\n\(dayText)")
                         }
+
+                        if !nightText.isEmpty, nightText != dayText {
+                            parts.append("Night...\n\(nightText)")
+                        }
+
+                        let description = parts.joined(separator: "\n\n")
 
                         selectedDetail = DetailPayload(
                             title: "\(abbreviatedDayName(d.name)) \(d.dateText)",
-                            body: body
+                            description: description.isEmpty ? nil : description,
+                            instructions: [],
+                            severity: nil
                         )
                     }
                     .padding(.vertical, 4)
@@ -1089,7 +1097,7 @@ struct ContentView: View {
         for (key, title) in patterns {
             if let range = cleaned.range(of: "\(key)...") {
                 let start = range.upperBound
-                let remainder = cleaned[start...]
+ //               let remainder = cleaned[start...]
 
                 let end = patterns
                     .compactMap { cleaned.range(of: "\($0.0)...", range: start..<cleaned.endIndex)?.lowerBound }
