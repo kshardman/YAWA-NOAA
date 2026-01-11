@@ -340,28 +340,24 @@ struct ContentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItem(placement: .principal) {
                 Text("Yawa NOAA Weather")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(YAWATheme.textSecondary)
                     .opacity(0.85)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .onLongPressGesture(minimumDuration: 1.0) {
                         triggerEasterEgg()
                     }
             }
 
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { showingLocations = true } label: {
-                    Image(systemName: "star.circle.fill")
-                }
-                .tint(YAWATheme.textSecondary)
-
-                Button { showingSettings = true } label: {
-                    Image(systemName: "gearshape.fill")
-                }
-                .tint(YAWATheme.textSecondary)
+                Button { showingLocations = true } label: { Image(systemName: "star.circle.fill") }
+                Button { showingSettings = true } label: { Image(systemName: "gearshape.fill") }
             }
         }
+        .tint(YAWATheme.textSecondary)
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }

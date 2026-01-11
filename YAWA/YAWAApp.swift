@@ -16,9 +16,16 @@ struct YAWAApp: App {
         appearance.backgroundColor = .clear
         appearance.shadowColor = .clear
 
+        // Optional: if you ever show a title in the nav bar, make it readable
+        appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
+        appearance.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
+
         UINavigationBar.appearance().standardAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
         UINavigationBar.appearance().compactAppearance = appearance
+
+        // ✅ This is the missing piece: makes the status bar (time/Wi-Fi/battery) white
+        UINavigationBar.appearance().overrideUserInterfaceStyle = .dark
     }
 
     var body: some Scene {
