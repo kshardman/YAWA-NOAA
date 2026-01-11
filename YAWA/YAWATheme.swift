@@ -22,4 +22,6 @@ enum YAWATheme {
     static let textPrimary = Color.white
     static let textSecondary = Color.white.opacity(0.75)
     static let textTertiary = Color.white.opacity(0.55)
+    
+    static let divider = Color.white.opacity(0.22)
 }

@@ -147,7 +147,8 @@ struct InlineForecastCard: View {
             }
         }
         .padding(14)
-        .background(.thinMaterial)
+//        .background(tileBackground)
+        .background(Color.white.opacity(0.10))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .task {
             guard let coord else { return }

@@ -612,10 +612,11 @@ struct ContentView: View {
                         HStack(spacing: 6) {
                             Text(weekdayLabel(d.startDate))
                                 .font(.headline)
+                                .foregroundStyle(YAWATheme.textPrimary)
 
                             Text(d.dateText)
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(YAWATheme.textSecondary)
                         }
                         .frame(width: sideCol, alignment: .leading)
 
@@ -629,7 +630,7 @@ struct ContentView: View {
                             if let pop = popText(d.day) {
                                 Text(pop)
                                     .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(YAWATheme.textSecondary)
                                     .monospacedDigit()
                             } else {
                                 Text(" ")
@@ -643,6 +644,7 @@ struct ContentView: View {
                         Text("H \(d.highText)  L \(d.lowText)")
                             .font(.headline)
                             .monospacedDigit()
+                            .foregroundStyle(YAWATheme.textPrimary)
                             .frame(width: sideCol, alignment: .trailing)
                     }
                     .contentShape(Rectangle())
@@ -674,7 +676,10 @@ struct ContentView: View {
                     }
 
                     // If you want dividers between rows, add them here:
-                    // if d.id != forecastDays.last?.id { Divider().opacity(0.35) }
+                    if d.id != forecastDays.last?.id {
+                            Divider()
+                                .overlay(YAWATheme.divider)   // <— use your theme divider opacity
+                        }
                 }
 
             } else if !forecastVM.isLoading {
