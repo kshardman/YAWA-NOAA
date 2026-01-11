@@ -25,22 +25,23 @@ struct InlineForecastCard: View {
             HStack(spacing: 10) {
                 Image(systemName: symbolForSeverity(alert.properties.severity))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(YAWATheme.alertIcon) // ✅
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(alert.properties.event)
                         .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(YAWATheme.textPrimary) // ✅
                         .lineLimit(1)
 
                     if let headline = alert.properties.headline, !headline.isEmpty {
                         Text(headline)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(YAWATheme.textSecondary) // ✅
                             .lineLimit(2)
                     } else if let area = alert.properties.areaDesc, !area.isEmpty {
                         Text(area)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(YAWATheme.textSecondary) // ✅
                             .lineLimit(2)
                     }
                 }
@@ -89,7 +90,7 @@ struct InlineForecastCard: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Alerts & Advisories")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(YAWATheme.alertHeader)
 
                     InlineAlertRow(alert: top)
 
