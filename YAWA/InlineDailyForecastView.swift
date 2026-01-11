@@ -44,7 +44,7 @@ struct InlineDailyForecastView: View {
                 HStack(spacing: 8) {
                     Image(systemName: symbolForSeverity(alert.properties.severity))
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(YAWATheme.alert)
 
                     Text(alert.properties.event)
                         .font(.headline)

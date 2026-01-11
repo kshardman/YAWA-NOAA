@@ -59,7 +59,7 @@ struct ForecastView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     Image(systemName: symbolForSeverity(alert.properties.severity))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(YAWATheme.alert)
                     Text(alert.properties.event)
                         .font(.headline)
                     Spacer()

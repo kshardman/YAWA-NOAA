@@ -31,4 +31,6 @@ enum YAWATheme {
     static let alertIcon = Color.orange
     
     static let alertHeader = Color.yellow.opacity(0.95)
+    
+    static let alert = Color.yellow.opacity(0.95)
 }

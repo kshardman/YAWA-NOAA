@@ -338,19 +338,28 @@ struct ContentView: View {
 
         // 🔹 Navigation + toolbar MUST be attached here
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .topBarLeading) {
                 Text("Yawa NOAA Weather")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(YAWATheme.textSecondary)
+                    .opacity(0.85)
                     .onLongPressGesture(minimumDuration: 1.0) {
                         triggerEasterEgg()
                     }
-                    .accessibilityLabel("YAWA")
             }
 
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { showingLocations = true } label: { Image(systemName: "star.circle") }
-                Button { showingSettings = true } label: { Image(systemName: "gearshape") }
+                Button { showingLocations = true } label: {
+                    Image(systemName: "star.circle.fill")
+                }
+                .tint(YAWATheme.textSecondary)
+
+                Button { showingSettings = true } label: {
+                    Image(systemName: "gearshape.fill")
+                }
+                .tint(YAWATheme.textSecondary)
             }
         }
         .sheet(isPresented: $showingSettings) {
