@@ -461,33 +461,33 @@ struct ContentView: View {
 
     private var headerSection: some View {
         VStack(spacing: 10) {
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 Text("Current Conditions")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(YAWATheme.textPrimary)
 
                 if !headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     HStack(spacing: 6) {
                         Text(headerLocationText)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(YAWATheme.textSecondary)
 
                         if showCurrentLocationGlyph {
                             Image(systemName: "location.circle")
                                 .imageScale(.small)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
                         }
                     }
                 } else {
                     Text("Current Location")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(YAWATheme.textSecondary)
                 }
 
                 if source == .pws, !viewModel.pwsLabel.isEmpty {
                     Text("\(viewModel.pwsLabel) • PWS")
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(YAWATheme.textTertiary)
                 }
             }
 
