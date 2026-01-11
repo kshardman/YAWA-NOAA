@@ -100,7 +100,7 @@ struct InlineForecastCard: View {
                     }
                 }
                 .padding(10)
-                .background(Color(.secondarySystemBackground))
+                .background(YAWATheme.card2)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
 

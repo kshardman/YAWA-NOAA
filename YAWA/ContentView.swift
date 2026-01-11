@@ -121,7 +121,7 @@ struct ContentView: View {
     private var tempIconFont: Font { isA11y ? .title2 : .title3 }
 
     private var tileBackground: some ShapeStyle {
-        Color(.secondarySystemBackground)
+        YAWATheme.card
     }
 
     private var headerLocationText: String {
@@ -182,8 +182,7 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            Color(.systemBackground).ignoresSafeArea()
-
+            YAWATheme.sky.ignoresSafeArea()
             VStack(spacing: 18) {
 
                 headerSection
@@ -196,10 +195,10 @@ struct ContentView: View {
                     // Optional: keep the title “anchored” (so it doesn’t scroll away)
                     // If your inlineForecastSection already includes a "Daily Forecast" title,
                     // you can remove this Text block.
-                   Text("Daily Forecast")
-                       .font(.title3.weight(.semibold))
-                       .foregroundStyle(.primary)
-                       .frame(maxWidth: .infinity, alignment: .center)
+                    Text("Daily Forecast")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(YAWATheme.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .center)
 
                     ScrollView(showsIndicators: true) {
                         inlineForecastSection
@@ -341,7 +340,7 @@ struct ContentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("Yawa")
+                Text("Yawa NOAA Weather")
                     .font(.headline)
                     .onLongPressGesture(minimumDuration: 1.0) {
                         triggerEasterEgg()
@@ -570,7 +569,7 @@ struct ContentView: View {
                     }
                 }
                 .padding(10)
-                .background(Color(.secondarySystemBackground))
+                .background(YAWATheme.card2)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -685,7 +684,7 @@ struct ContentView: View {
             }
         }
         .padding(14)
-        .background(.thinMaterial)
+        .background(YAWATheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
@@ -697,7 +696,8 @@ struct ContentView: View {
                 Spacer(minLength: 0)
 
                 Text(viewModel.temp)
-                    .font(Font.system(size: tempFontSize, weight: .semibold))
+                    .font(.system(size: tempFontSize, weight: .semibold))
+                    .foregroundStyle(YAWATheme.textPrimary)
                     .monospacedDigit()
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
@@ -712,19 +712,21 @@ struct ContentView: View {
                 .padding(.top, 10)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: bigMinHeight * 1.15)          // ✅ lock height (not minHeight)
-        .background(tileBackground)
+        .frame(height: bigMinHeight * 1.15) // lock height
+        .background(YAWATheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private func miniTile(_ systemImage: String, _ color: Color, _ value: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: systemImage)
+                .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(color)
                 .font(miniIconFont)
 
             Text(value)
                 .font(miniValueFont)
+                .foregroundStyle(YAWATheme.textPrimary)   // ✅ important for dark sky
                 .monospacedDigit()
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
