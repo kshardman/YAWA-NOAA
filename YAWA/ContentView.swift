@@ -1503,21 +1503,46 @@ private struct LocationsSheet: View {
                 .textCase(nil)
             }
             .scrollContentBackground(.hidden)
-            .background(YAWATheme.card2)
-            .listStyle(.insetGrouped)
-            .navigationTitle("Locations")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        searchVM.query = ""
-                        searchVM.results = []
-                        searchFocused = false
-                        showingLocations = false
+                .background(YAWATheme.sky)
+                .listStyle(.insetGrouped)
+                .navigationTitle("Locations")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            searchVM.query = ""
+                            searchVM.results = []
+                            searchFocused = false
+                            showingLocations = false
+                        } label: {
+                            Text("Done")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(
+                                    ZStack {
+                                        // Base glass
+                                        Capsule()
+                                            .fill(.ultraThinMaterial)
+
+                                        // Lightening wash (this is the key difference)
+                                        Capsule()
+                                            .fill(Color.white.opacity(0.10))
+                                    }
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.white.opacity(0.20), lineWidth: 1)
+                                )
+                                .shadow(color: .black.opacity(0.20), radius: 10, y: 4)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .foregroundStyle(YAWATheme.textSecondary)
                 }
-            }
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                .toolbarColorScheme(.dark, for: .navigationBar)
         }
     }
 }
