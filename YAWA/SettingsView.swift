@@ -55,7 +55,7 @@ struct SettingsView: View {
             // Nav bar glass + readable title (Daily Forecast style)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(YAWATheme.card2, for: .navigationBar)   // ✅ tint like Daily Forecast
-            .toolbarColorScheme(.dark, for: .navigationBar)
+//            .toolbarColorScheme(.dark, for: .navigationBar)
             
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
