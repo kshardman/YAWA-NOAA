@@ -52,14 +52,27 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-
-            // ✅ Prevent the system from painting a gray/white nav bar background
-            .toolbarBackground(.hidden, for: .navigationBar)
-
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
-                        .foregroundStyle(YAWATheme.textSecondary)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule()
+                                .fill(.white.opacity(0.18))          // brighter, cleaner glass
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(.white.opacity(0.20), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
+                        .buttonStyle(.plain)
                 }
             }
             .task {
