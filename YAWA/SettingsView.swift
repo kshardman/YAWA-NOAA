@@ -58,21 +58,9 @@ struct SettingsView: View {
             
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.95))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(.white.opacity(0.18))          // brighter, cleaner glass
-                        )
-                        .overlay(
-                            Capsule()
-                                .stroke(.white.opacity(0.20), lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
-                        .buttonStyle(.plain)
+                    GlassyDoneButton {
+                        dismiss()
+                    }
                 }
             }
             .task {

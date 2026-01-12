@@ -457,8 +457,9 @@ struct ContentView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { selectedDetail = nil }
-                            .foregroundStyle(YAWATheme.textSecondary) // ✅ matches Settings/Favorites
+                        GlassyDoneButton {
+                            selectedDetail = nil
+                        }
                     }
                 }
                 // ✅ Make the nav bar match the card surface
@@ -1509,35 +1510,12 @@ private struct LocationsSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
+                        GlassyDoneButton {
                             searchVM.query = ""
                             searchVM.results = []
                             searchFocused = false
                             showingLocations = false
-                        } label: {
-                            Text("Done")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .background(
-                                    ZStack {
-                                        // Base glass
-                                        Capsule()
-                                            .fill(.ultraThinMaterial)
-
-                                        // Lightening wash (this is the key difference)
-                                        Capsule()
-                                            .fill(Color.white.opacity(0.10))
-                                    }
-                                )
-                                .overlay(
-                                    Capsule()
-                                        .stroke(Color.white.opacity(0.20), lineWidth: 1)
-                                )
-                                .shadow(color: .black.opacity(0.20), radius: 10, y: 4)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .toolbarBackground(.visible, for: .navigationBar)
