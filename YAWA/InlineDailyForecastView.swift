@@ -163,7 +163,7 @@ struct InlineDailyForecastView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { selectedDetail = nil }
+                        Button("Done for now") { selectedDetail = nil }
                     }
                 }
             }

@@ -142,7 +142,7 @@ struct InlineForecastCard: View {
                     }
                 }
             } else if !vm.isLoading && vm.errorMessage == nil {
-                Text("No forecast yet.")
+                Text("No forecast yet (removed)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

@@ -291,11 +291,6 @@ struct ContentView: View {
             }
         }
         
- //       .onReceive(location.$locationName) { name in
- //           guard selection.selectedFavorite == nil else { return }
-//            guard let name, !name.isEmpty else { return }
-  //          viewModel.currentLocationLabel = name
-//        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             guard selection.selectedFavorite == nil else { return } // favorites handled elsewhere
@@ -370,93 +365,109 @@ struct ContentView: View {
         }
         .sheet(item: $selectedDetail) { detail in
             NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                ZStack {
+                    // ✅ Always keep the sheet on your sky background
+                    YAWATheme.sky.ignoresSafeArea()
 
-                        switch detail.body {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
 
-                        case .text(let text):
-                            Text(text)
-                                .font(.callout)
-                                .foregroundStyle(.primary)
-                                .lineSpacing(6)
-                                .multilineTextAlignment(.leading)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            switch detail.body {
 
-                        case .alert(let description, let instructions, let severity):
+                            case .text(let text):
+                                Text(text)
+                                    .font(.callout)
+                                    .foregroundStyle(YAWATheme.textPrimary)
+                                    .lineSpacing(6)
+                                    .multilineTextAlignment(.leading)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                            // MAIN NARRATIVE (WHAT / WHEN / IMPACTS / ADDITIONAL DETAILS)
-                            if let description, !description.isEmpty {
-                                let sections = parseAlertNarrativeSections(from: description)
+                            case .alert(let description, let instructions, let severity):
 
-                                VStack(alignment: .leading, spacing: 12) {
-                                    ForEach(sections) { s in
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            if let label = s.label {
-                                                Text(label)
-                                                    .font(.headline)
+                                // MAIN NARRATIVE (WHAT / WHEN / IMPACTS / ADDITIONAL DETAILS)
+                                if let description, !description.isEmpty {
+                                    let sections = parseAlertNarrativeSections(from: description)
+
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        ForEach(sections) { s in
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                if let label = s.label {
+                                                    Text(label)
+                                                        .font(.headline)
+                                                        .foregroundStyle(YAWATheme.textPrimary)
+                                                }
+
+                                                Text(s.body)
+                                                    .font(.callout)
+                                                    .foregroundStyle(YAWATheme.textPrimary)
+                                                    .lineSpacing(6)
+                                                    .multilineTextAlignment(.leading)
+                                                    .textSelection(.enabled)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
                                             }
-
-                                            Text(s.body)
-                                                .font(.callout)
-                                                .foregroundStyle(.primary)
-                                                .lineSpacing(6)
-                                                .multilineTextAlignment(.leading)
-                                                .textSelection(.enabled)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
                                         }
                                     }
                                 }
-                            }
 
-                            // WHAT TO DO — proper bullets
-                            if !instructions.isEmpty {
-                                Text("What to do")
-                                    .font(.headline)
-                                    .padding(.top, description == nil ? 0 : 4)
+                                // WHAT TO DO — proper bullets
+                                if !instructions.isEmpty {
+                                    Text("What to do")
+                                        .font(.headline)
+                                        .foregroundStyle(YAWATheme.textPrimary)
+                                        .padding(.top, (description?.isEmpty ?? true) ? 0 : 4)
 
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(instructions, id: \.self) { item in
-                                        let cleaned = stripLeadingBullet(item)
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        ForEach(instructions, id: \.self) { item in
+                                            let cleaned = stripLeadingBullet(item)
 
-                                        HStack(alignment: .top, spacing: 10) {
-                                            Text("•")
-                                                .font(.callout.weight(.semibold))
-                                                .padding(.top, 1)
+                                            HStack(alignment: .top, spacing: 10) {
+                                                Text("•")
+                                                    .font(.callout.weight(.semibold))
+                                                    .foregroundStyle(YAWATheme.textPrimary)
+                                                    .padding(.top, 1)
 
-                                            Text(cleaned)
-                                                .font(.callout)
-                                                .foregroundStyle(.primary)
-                                                .lineSpacing(4)
-                                                .multilineTextAlignment(.leading)
-                                                .textSelection(.enabled)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                Text(cleaned)
+                                                    .font(.callout)
+                                                    .foregroundStyle(YAWATheme.textPrimary)
+                                                    .lineSpacing(4)
+                                                    .multilineTextAlignment(.leading)
+                                                    .textSelection(.enabled)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                            }
                                         }
                                     }
                                 }
-                            }
 
-                            // SEVERITY FOOTER
-                            if let severity, !severity.isEmpty {
-                                Divider().padding(.top, 6)
+                                // SEVERITY FOOTER
+                                if let severity, !severity.isEmpty {
+                                    Divider().padding(.top, 6)
 
-                                Text("Severity: \(severity)")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                                    Text("Severity: \(severity)")
+                                        .font(.footnote)
+                                        .foregroundStyle(YAWATheme.textSecondary)
+                                }
                             }
                         }
+                        // ✅ Card styling so the content doesn’t blend into the sky
+                        .padding(16)
                     }
-                    .padding(16)
                 }
                 .navigationTitle(detail.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Done") { selectedDetail = nil }
+                            .foregroundStyle(YAWATheme.textSecondary) // ✅ matches Settings/Favorites
                     }
                 }
+                // ✅ Make the nav bar match the card surface
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(YAWATheme.card2, for: .navigationBar)
+                .toolbarColorScheme(.dark, for: .navigationBar)
             }
+            // ✅ Keeps the sheet “dark” consistently even if system flips appearance
+            .preferredColorScheme(.dark)
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
@@ -565,9 +576,9 @@ struct ContentView: View {
             // Alerts & Advisories (tap to expand)
             if let top = forecastVM.alerts.first {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Alerts & Advisories")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(YAWATheme.alertHeader)
+//                    Text("Alerts/Advisories")
+//                        .font(.subheadline.weight(.semibold))
+//                        .foregroundStyle(YAWATheme.alertHeader)
 
                     InlineAlertRow(alert: top)
 
@@ -1491,7 +1502,7 @@ private struct LocationsSheet: View {
                 .textCase(nil)
             }
             .scrollContentBackground(.hidden)
-            .background(YAWATheme.sky)
+            .background(YAWATheme.card2)
             .listStyle(.insetGrouped)
             .navigationTitle("Locations")
             .navigationBarTitleDisplayMode(.inline)

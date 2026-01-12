@@ -3,20 +3,19 @@ import UIKit
 
 @main
 struct YAWAApp: App {
-    // ✅ This wires in AppDelegate (BGTasks + notifications delegate)
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     @StateObject private var favorites = FavoritesStore()
     @StateObject private var selection = LocationSelectionStore()
 
     init() {
+        // ✅ Don’t globally force blur/material. Let SwiftUI per-screen
+        // `.toolbarBackground(... for: .navigationBar)` control the “liquid glass” look.
         let appearance = UINavigationBarAppearance()
         appearance.configureWithTransparentBackground()
-        appearance.backgroundEffect = UIBlurEffect(style: .systemMaterial)
-        appearance.backgroundColor = .clear
         appearance.shadowColor = .clear
 
-        // Optional: if you ever show a title in the nav bar, make it readable
+        // Optional: keep nav titles readable if any UIKit-driven bar shows up.
         appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
         appearance.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
 
@@ -24,8 +23,8 @@ struct YAWAApp: App {
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
         UINavigationBar.appearance().compactAppearance = appearance
 
-        // ✅ This is the missing piece: makes the status bar (time/Wi-Fi/battery) white
-        UINavigationBar.appearance().overrideUserInterfaceStyle = .dark
+        // ❌ IMPORTANT: remove this (it fights SwiftUI toolbarColorScheme)
+        // UINavigationBar.appearance().overrideUserInterfaceStyle = .dark
     }
 
     var body: some Scene {
