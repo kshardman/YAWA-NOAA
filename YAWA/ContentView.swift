@@ -1472,6 +1472,7 @@ private struct LocationsSheet: View {
                             // ✅ Swipe works reliably on non-Button row content
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
+                                    lightHaptic()
                                     favorites.remove(f)
                                 } label: {
                                     Image(systemName: "trash")
@@ -1515,6 +1516,12 @@ private func successHaptic() {
     let gen = UINotificationFeedbackGenerator()
     gen.prepare()
     gen.notificationOccurred(.success)
+}
+
+func lightHaptic() {
+    let generator = UIImpactFeedbackGenerator(style: .light)
+    generator.prepare()
+    generator.impactOccurred()
 }
 
 #Preview {
