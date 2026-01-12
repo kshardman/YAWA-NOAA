@@ -1506,7 +1506,7 @@ private struct LocationsSheet: View {
             .scrollContentBackground(.hidden)
                 .background(YAWATheme.sky)
                 .listStyle(.insetGrouped)
-                .navigationTitle("Locations")
+                .navigationTitle("Favorites")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -1518,9 +1518,14 @@ private struct LocationsSheet: View {
                         }
                     }
                 }
-                .toolbarBackground(.visible, for: .navigationBar)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarColorScheme(.dark, for: .navigationBar)
+            // Nav bar glass + readable title (Daily Forecast style)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(YAWATheme.card2, for: .navigationBar)   // ✅ tint like Daily Forecast
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            
+//                .toolbarBackground(.visible, for: .navigationBar)
+//                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+//                .toolbarColorScheme(.dark, for: .navigationBar)
         }
     }
 }

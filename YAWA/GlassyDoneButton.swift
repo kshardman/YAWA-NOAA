@@ -1,11 +1,3 @@
-//
-//  GlassyDoneButton.swift
-//  YAWA
-//
-//  Created by Keith Sharman on 1/12/26.
-//
-
-
 import SwiftUI
 
 struct GlassyDoneButton: View {
@@ -18,33 +10,20 @@ struct GlassyDoneButton: View {
     }
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(
-                    ZStack {
-                        // Base glass
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-
-                        // Subtle lift so it doesn’t go dark on deep blues
-                        Capsule()
-                            .fill(Color.white.opacity(0.10))
-                    }
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(Color.white.opacity(0.20), lineWidth: 1)
-                )
-                .shadow(
-                    color: .black.opacity(0.20),
-                    radius: 10,
-                    y: 4
-                )
-        }
-        .buttonStyle(.plain)
+        Button(title, action: action)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(YAWATheme.textPrimary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.12))   // ✅ readable on dark + blue
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1) // ✅ crisp edge
+            )
+            .contentShape(Capsule())
+            .buttonStyle(.plain)
     }
 }
