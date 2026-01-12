@@ -362,7 +362,11 @@ struct ContentView: View {
             SettingsView()
         }
         .sheet(isPresented: $showingLocations) {
-            locationsSheet
+            LocationsSheet(
+                showingLocations: $showingLocations,
+                sourceRaw: $sourceRaw,
+                previousSourceRaw: $previousSourceRaw
+            )
         }
         .sheet(item: $selectedDetail) { detail in
             NavigationStack {
@@ -752,189 +756,7 @@ struct ContentView: View {
 
     // MARK: - Locations sheet
 
-    private var locationsSheet: some View {
-        NavigationStack {
-            List {
-
-                // MARK: - Search
-                Section {
-                    HStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary)
-
-                        TextField("Search city, state", text: $searchVM.query)
-                            .textInputAutocapitalization(.words)
-                            .autocorrectionDisabled()
-                            .submitLabel(.search)
-                            .onSubmit { Task { await searchVM.search() } }
-
-                        if searchVM.isSearching {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-
-                        if !searchVM.query.isEmpty {
-                            Button {
-                                searchVM.query = ""
-                                searchVM.results = []
-                                dismissKeyboard()
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-
-                // MARK: - Search Results
-                if !searchVM.results.isEmpty {
-                    Section("Results") {
-                        ForEach(searchVM.results.prefix(8)) { r in
-                            Button {
-                                // Selecting a searched city implies NOAA
-                                if previousSourceRaw == nil {
-                                    previousSourceRaw = sourceRaw
-                                }
-                                sourceRaw = CurrentConditionsSource.noaa.rawValue
-                                viewModel.pwsLabel = ""
-
-                                let f = FavoriteLocation(
-                                    title: r.title,
-                                    subtitle: r.subtitle,
-                                    latitude: r.coordinate.latitude,
-                                    longitude: r.coordinate.longitude
-                                )
-
-                                favorites.add(f)
-                                selection.selectedFavorite = f
-
-                                searchVM.query = ""
-                                searchVM.results = []
-                                dismissKeyboard()
-
-                                Task {
-                                    await refreshNow()
-                                    await refreshForecastNow()
-                                }
-                                
-                                showingLocations = false
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(r.title)
-                                            .font(.headline)
-
-                                        if !r.subtitle.isEmpty {
-                                            Text(r.subtitle)
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-
-                                    Spacer()
-
-                                    Image(systemName: "star")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // MARK: - Current Location
-                Section {
-                    Button {
-                        selection.selectedFavorite = nil
-
-                        if let prev = previousSourceRaw {
-                            sourceRaw = prev
-                            previousSourceRaw = nil
-                        }
-
-                        if source != .pws {
-                            viewModel.pwsLabel = ""
-                        }
-
-                        searchVM.query = ""
-                        searchVM.results = []
-                        dismissKeyboard()
-
-                        Task {
-                            await refreshNow()
-                            await refreshForecastNow()
-                        }
-                        showingLocations = false
-                    } label: {
-                        HStack {
-                            Text("Current Location")
-                            Spacer()
-                            if selection.selectedFavorite == nil {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-
-                // MARK: - Favorites
-                Section("Favorites") {
-                    if favorites.favorites.isEmpty {
-                        Text("No favorites yet.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(favorites.favorites) { f in
-                            Button {
-                                if previousSourceRaw == nil {
-                                    previousSourceRaw = sourceRaw
-                                }
-
-                                sourceRaw = CurrentConditionsSource.noaa.rawValue
-                                viewModel.pwsLabel = ""
-
-                                selection.selectedFavorite = f
-
-                                searchVM.query = ""
-                                searchVM.results = []
-                                dismissKeyboard()
-
-                                Task {
-                                    await refreshNow()
-                                    await refreshForecastNow()
-                                }
-                                showingLocations = false
-                            } label: {
-                                HStack {
-                                    Text(f.displayName)
-                                    Spacer()
-                                    if selection.selectedFavorite?.id == f.id {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                        .onDelete { indexSet in
-                            for i in indexSet {
-                                favorites.remove(favorites.favorites[i])
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Locations")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        searchVM.query = ""
-                        searchVM.results = []
-                        dismissKeyboard()
-                        showingLocations = false
-                    }
-                }
-            }
-        }
-    }
-
+    
     // MARK: - Async refresh
 
     private func refreshNow() async {
@@ -1495,9 +1317,109 @@ private struct LocationsSheet: View {
     @Binding var sourceRaw: String
     @Binding var previousSourceRaw: String?
 
+    @StateObject private var searchVM = CitySearchViewModel()
+    @FocusState private var searchFocused: Bool
+
     var body: some View {
         NavigationStack {
             List {
+
+                // MARK: - Search
+                Section {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(YAWATheme.textSecondary)
+
+                        TextField("Search city, state", text: $searchVM.query)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .submitLabel(.search)
+                            .focused($searchFocused)
+                            .foregroundStyle(YAWATheme.textPrimary)
+                            .onSubmit {
+                                Task { await searchVM.search() }
+                            }
+
+                        if searchVM.isSearching {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+
+                        if !searchVM.query.isEmpty {
+                            Button {
+                                searchVM.query = ""
+                                searchVM.results = []
+                                searchFocused = false
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(YAWATheme.textSecondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .listRowBackground(YAWATheme.card2)
+                .listRowSeparator(.hidden)
+
+                // MARK: - Search Results
+                if !searchVM.results.isEmpty {
+                    Section {
+                        ForEach(Array(searchVM.results.prefix(8))) { r in
+                            Button {
+                                if previousSourceRaw == nil {
+                                    previousSourceRaw = sourceRaw
+                                }
+
+                                sourceRaw = CurrentConditionsSource.noaa.rawValue
+
+                                let f = FavoriteLocation(
+                                    title: r.title,
+                                    subtitle: r.subtitle,
+                                    latitude: r.coordinate.latitude,
+                                    longitude: r.coordinate.longitude
+                                )
+
+                                favorites.add(f)
+                                selection.selectedFavorite = f
+
+                                searchVM.query = ""
+                                searchVM.results = []
+                                searchFocused = false
+                                showingLocations = false
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(r.title)
+                                            .foregroundStyle(YAWATheme.textPrimary)
+
+                                        if !r.subtitle.isEmpty {
+                                            Text(r.subtitle)
+                                                .font(.subheadline)
+                                                .foregroundStyle(YAWATheme.textSecondary)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "star")
+                                        .foregroundStyle(YAWATheme.textSecondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                            .listRowBackground(YAWATheme.card2)
+                            .listRowSeparator(.hidden)
+                        }
+                    } header: {
+                        Text("Results")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(YAWATheme.textPrimary)
+                    }
+                    .textCase(nil)
+                }
+
+                // MARK: - Current Location
                 Section {
                     Button {
                         selection.selectedFavorite = nil
@@ -1507,22 +1429,33 @@ private struct LocationsSheet: View {
                             previousSourceRaw = nil
                         }
 
+                        searchVM.query = ""
+                        searchVM.results = []
+                        searchFocused = false
+
                         showingLocations = false
                     } label: {
                         HStack {
                             Text("Current Location")
+                                .foregroundStyle(YAWATheme.textPrimary)
+
                             Spacer()
+
                             if selection.selectedFavorite == nil {
                                 Image(systemName: "checkmark")
+                                    .foregroundStyle(YAWATheme.textSecondary)
                             }
                         }
                     }
                 }
+                .listRowBackground(YAWATheme.card2)
+                .listRowSeparator(.hidden)
 
-                Section("Favorites") {
+                // MARK: - Favorites
+                Section {
                     if favorites.favorites.isEmpty {
                         Text("No favorites yet.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(YAWATheme.textSecondary)
                     } else {
                         ForEach(favorites.favorites) { f in
                             Button {
@@ -1532,13 +1465,22 @@ private struct LocationsSheet: View {
 
                                 sourceRaw = CurrentConditionsSource.noaa.rawValue
                                 selection.selectedFavorite = f
+
+                                searchVM.query = ""
+                                searchVM.results = []
+                                searchFocused = false
+
                                 showingLocations = false
                             } label: {
                                 HStack {
                                     Text(f.displayName)
+                                        .foregroundStyle(YAWATheme.textPrimary)
+
                                     Spacer()
+
                                     if selection.selectedFavorite?.id == f.id {
                                         Image(systemName: "checkmark")
+                                            .foregroundStyle(YAWATheme.textSecondary)
                                     }
                                 }
                             }
@@ -1549,45 +1491,31 @@ private struct LocationsSheet: View {
                             }
                         }
                     }
+                } header: {
+                    Text("Favorites")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(YAWATheme.textPrimary)
                 }
+                .textCase(nil)
+                .listRowBackground(YAWATheme.card2)
+                .listRowSeparator(.hidden)
             }
+            .buttonStyle(.plain)
+            .tint(YAWATheme.textSecondary)
+            .scrollContentBackground(.hidden)
+            .background(YAWATheme.sky)
             .navigationTitle("Locations")
             .navigationBarTitleDisplayMode(.inline)
+            .listStyle(.insetGrouped)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { showingLocations = false }
+                        .foregroundStyle(YAWATheme.textSecondary)
                 }
             }
         }
     }
 }
-
-
-// MARK: - Animated updated row + spinner
-
-// private struct UpdatedStatusRow: View {
-//    let text: String
-//    let isRefreshing: Bool
-//    let color: Color
-
-//    var body: some View {
-//        HStack(spacing: 8) {
-//            if isRefreshing {
-//                ProgressView()
-//                    .controlSize(.mini)
-//                    .tint(color)
-//                    .transition(.opacity.combined(with: .scale))
-//            }
-
-//            Text(text)
-//                .font(.subheadline)
-//                .foregroundStyle(color)
-//                .contentTransition(.opacity)
-//        }
-//        .animation(.easeInOut(duration: 0.2), value: isRefreshing)
-//    }
-// }
-
 
 
 
