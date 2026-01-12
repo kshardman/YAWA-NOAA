@@ -163,11 +163,7 @@ struct InlineDailyForecastView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(16)
-                    .background(YAWATheme.card2)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 24)
+
                     
                 }
                 .navigationTitle(detail.title)

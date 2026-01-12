@@ -451,11 +451,6 @@ struct ContentView: View {
                         }
                         // ✅ Card styling so the content doesn’t blend into the sky
                         .padding(16)
-                        .background(YAWATheme.card2)
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .padding(.bottom, 24)
                     }
                 }
                 .navigationTitle(detail.title)
@@ -470,7 +465,6 @@ struct ContentView: View {
                 // ✅ Make the nav bar match the card surface
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbarBackground(YAWATheme.card2, for: .navigationBar)
-                .toolbarColorScheme(.dark, for: .navigationBar)
             }
             // ✅ Keeps the sheet “dark” consistently even if system flips appearance
             .preferredColorScheme(.dark)
@@ -1526,11 +1520,8 @@ private struct LocationsSheet: View {
             // Nav bar glass + readable title (Daily Forecast style)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(YAWATheme.card2, for: .navigationBar)   // ✅ tint like Daily Forecast
-//            .toolbarColorScheme(.dark, for: .navigationBar)
-            
-//                .toolbarBackground(.visible, for: .navigationBar)
-//                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-//                .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .preferredColorScheme(.dark)
         }
     }
 }

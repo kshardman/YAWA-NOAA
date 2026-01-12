@@ -32,6 +32,7 @@ struct YAWAApp: App {
             NavigationStack {
                 ContentView()
             }
+            .preferredColorScheme(.dark)   // ← THIS fixes the status bar
             .environmentObject(favorites)
             .environmentObject(selection)
         }
