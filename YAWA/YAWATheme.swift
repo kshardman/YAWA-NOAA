@@ -28,9 +28,11 @@ enum YAWATheme {
     static let card = Color.white.opacity(0.10)         // same family as tiles
     static let cardStroke = Color.white.opacity(0.16)   // subtle border for definition
     
-    static let alertIcon = Color.orange
+    static let alertIcon = Color.red
     
     static let alertHeader = Color.yellow.opacity(0.95)
     
     static let alert = Color.yellow.opacity(0.95)
+    
+    static let accent = Color.yellow.opacity(0.95)
 }
