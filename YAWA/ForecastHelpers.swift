@@ -22,15 +22,19 @@ struct DailyForecast: Identifiable {
         return formatter.string(from: startDate)
     }
 
+    private func tempText(_ t: Int?) -> String {
+        t.map { "\($0)°" } ?? "—"
+    }
+
     // These assume your combine logic is "day + optional night"
-    var highText: String { "\(day.temperature)°" }
+    var highText: String { tempText(day.temperature) }
 
     var lowText: String {
         if let night {
-            return "\(night.temperature)°"
+            return tempText(night.temperature)
         }
         // If NOAA didn't give the night period, fall back to day temp
-        return "\(day.temperature)°\(day.temperatureUnit)"
+        return tempText(day.temperature)
     }
 }
 

@@ -567,10 +567,11 @@ struct ContentView: View {
                 }
             }
 
-            if let msg = forecastVM.errorMessage, !msg.isEmpty {
+            // Error (only show if not currently loading)
+            if let msg = forecastVM.errorMessage, !msg.isEmpty, !forecastVM.isLoading {
                 Text(msg)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(YAWATheme.textSecondary)
             }
 
             // Alerts & Advisories (tap to expand)
@@ -702,11 +703,7 @@ struct ContentView: View {
                         }
                 }
 
-            } else if !forecastVM.isLoading {
-                Text("No forecast yet.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            } 
         }
         .padding(14)
         .background(YAWATheme.card)

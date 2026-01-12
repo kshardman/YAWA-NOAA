@@ -80,15 +80,11 @@ func abbreviatedDayName(_ name: String) -> String {
 // MARK: - Probability of precipitation text (rounded to nearest 10%)
 
 func popText(_ p: NWSForecastResponse.Period) -> String? {
-    // You previously used p.probabilityOfPrecipitation?.value
     guard let v = p.probabilityOfPrecipitation?.value else { return nil }
 
-    // Round to nearest 10
-    let rounded10 = (v / 10.0).rounded() * 10.0
-    let i = Int(rounded10)
+    let rounded10 = ((v + 5) / 10) * 10
 
-    // Optionally suppress tiny PoP like 0%
-    if i <= 0 { return nil }
+    if rounded10 <= 0 { return nil }
 
-    return "\(i)%"
+    return "\(rounded10)%"
 }

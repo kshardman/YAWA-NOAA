@@ -266,31 +266,31 @@ struct NWSPointsResponse: Decodable {
 }
 
 struct NWSForecastResponse: Decodable {
+    let properties: Properties
 
     struct Properties: Decodable {
         let periods: [Period]
     }
-
-    let properties: Properties
 
     struct Period: Decodable, Identifiable {
         let number: Int
         var id: Int { number }
 
         let name: String
-        let startTime: Date            // ✅ ADD
+        let startTime: Date
+        let endTime: Date
         let isDaytime: Bool
-        let temperature: Int
-        let temperatureUnit: String
-        let windSpeed: String
-        let windDirection: String
+
+        let temperature: Int?          // ✅ was Int
+        let temperatureUnit: String?   // ✅ usually String, but make optional-safe
+
         let shortForecast: String
         let detailedForecast: String?
         let probabilityOfPrecipitation: ProbabilityOfPrecipitation?
-    }
 
-    struct ProbabilityOfPrecipitation: Decodable {
-        let value: Double?
+        struct ProbabilityOfPrecipitation: Decodable {
+            let value: Int?
+        }
     }
 }
 
@@ -459,22 +459,23 @@ final class ForecastViewModel: ObservableObject {
 
         // 1) Periods are required. If this fails, show the forecast error.
         do {
+            print("🌦️ forecast refresh lat=\(coord.latitude) lon=\(coord.longitude)")
             periods = try await service.fetch7DayPeriods(lat: coord.latitude, lon: coord.longitude)
             errorMessage = nil
         } catch {
             // ✅ Treat cancellations as normal (don’t show an error)
             if error is CancellationError { return }
             if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
-
-            errorMessage = "Forecast unavailable."
+            print("🌦️ forecast ERROR:", error)
+            errorMessage = "Forecast unavailable at this time."
             return
         }
 
         // 2) Alerts are best-effort. If this fails, don't show a forecast error.
         do {
             alerts = try await service.fetchActiveAlerts(lat: coord.latitude, lon: coord.longitude)
-//            print("🚨 alerts fetched:", alerts.map { $0.properties.event ?? "?" })
-//            print("🚨 alert ids:", alerts.map { $0.id })
+            print("🚨 alerts fetched:", alerts.map { $0.properties.event ?? "?" })
+            print("🚨 alert ids:", alerts.map { $0.id })
             // ✅ notify once per new alert id (after alerts are updated)
             await notifyOnNewAlerts(locationTitle: nil)
         } catch {

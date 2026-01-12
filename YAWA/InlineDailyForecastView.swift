@@ -9,23 +9,23 @@ struct InlineDailyForecastView: View {
     var sideColumnWidth: CGFloat = 130
 
     // MARK: - Nested model
-    private struct DailyForecast: Identifiable {
-        let id: Int
-        let name: String
-        let startDate: Date
-        let day: NWSForecastResponse.Period
-        let night: NWSForecastResponse.Period?
-        var dateText: String {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "M/d"
-            return formatter.string(from: startDate)
-        }
-        var highText: String { "\(day.temperature)°" }
-        var lowText: String {
-            if let night { return "\(night.temperature)°" }
-            return "—"
-        }
-    }
+//    private struct DailyForecast: Identifiable {
+//        let id: Int
+//        let name: String
+//        let startDate: Date
+//        let day: NWSForecastResponse.Period
+//        let night: NWSForecastResponse.Period?
+//        var dateText: String {
+//            let formatter = DateFormatter()
+//            formatter.dateFormat = "M/d"
+//            return formatter.string(from: startDate)
+//        }
+//        var highText: String { "\(day.temperature)°" }
+//        var lowText: String {
+//            if let night { return "\(night.temperature)°" }
+//            return "—"
+//        }
+//    }
 
     // MARK: - Detail payload (optional sheet)
     private struct DetailPayload: Identifiable {
@@ -210,7 +210,8 @@ struct InlineDailyForecastView: View {
 
     private func popText(_ p: NWSForecastResponse.Period) -> String? {
         guard let pop = p.probabilityOfPrecipitation?.value else { return nil }
-        let rounded = (Int((pop / 10.0).rounded()) * 10)
+
+        let rounded = ((pop + 5) / 10) * 10
         return "\(rounded)%"
     }
 
