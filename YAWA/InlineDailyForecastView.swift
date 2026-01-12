@@ -94,18 +94,23 @@ struct InlineDailyForecastView: View {
                         .frame(width: sideColumnWidth, alignment: .leading)
 
                         // Center (icon + PoP)
-                        VStack(spacing: 3) {
+                        // Middle column (true center)
+                        let pop = popText(d.day)
+
+                        VStack(spacing: 2) {
                             Image(systemName: sym.symbol)
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(sym.color)
                                 .font(.title2)
+                                .offset(y: iconYOffset(symbol: sym.symbol, hasPop: pop != nil))
 
-                            if let pop = popText(d.day) {
-                                Text(pop)
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
-                            }
+                            // Always reserve PoP space
+                            Text(pop ?? "00%")
+                                .font(.caption2.weight(.semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(YAWATheme.textSecondary)
+                                .opacity(pop == nil ? 0 : 1)
+                                .frame(height: 14)
                         }
                         .frame(maxWidth: .infinity, alignment: .center)
 
@@ -208,6 +213,20 @@ struct InlineDailyForecastView: View {
         return name
     }
 
+    private func iconYOffset(symbol: String, hasPop: Bool) -> CGFloat {
+        guard !hasPop else { return 0 }
+
+        switch symbol {
+        case "sun.max.fill", "sun.max":
+            return 8
+        case "cloud.sun.fill", "cloud.sun":
+            return 6
+        default:
+            return 3
+        }
+    }
+
+    
     private func popText(_ p: NWSForecastResponse.Period) -> String? {
         guard let pop = p.probabilityOfPrecipitation?.value else { return nil }
 

@@ -642,25 +642,29 @@ struct ContentView: View {
                         .frame(width: sideCol, alignment: .leading)
 
                         // Middle column (true center)
+                        let pop = popText(d.day)
+
                         VStack(spacing: 2) {
                             Image(systemName: sym.symbol)
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(sym.color)
                                 .font(.title2)
+                                .offset(y: iconYOffset(symbol: sym.symbol, hasPop: pop != nil))
 
-                            if let pop = popText(d.day) {
-                                Text(pop)
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(YAWATheme.textSecondary)
-                                    .monospacedDigit()
-                            } else {
-                                Text(" ")
-                                    .font(.caption2)
-                                    .hidden()
+                            Group {
+                                if let pop {
+                                    Text(pop)
+                                } else {
+                                    Text("00%").hidden()   // ✅ keeps identical layout/baseline
+                                }
                             }
+                            .font(.caption2.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(YAWATheme.textSecondary)
                         }
-                        .frame(maxWidth: .infinity, alignment: .center)
-
+                        .frame(height: 44, alignment: .center)          // ✅ locks vertical centering
+                        .frame(maxWidth: .infinity, alignment: .center) // keeps true center column
+                        
                         // Right column (fixed)
                         Text("H \(d.highText)  L \(d.lowText)")
                             .font(.headline)
@@ -1530,6 +1534,19 @@ func lightHaptic() {
     let generator = UIImpactFeedbackGenerator(style: .light)
     generator.prepare()
     generator.impactOccurred()
+}
+
+private func iconYOffset(symbol: String, hasPop: Bool) -> CGFloat {
+    guard !hasPop else { return 0 }
+
+    switch symbol {
+    case "sun.max.fill", "sun.max":
+        return 8
+    case "cloud.sun.fill", "cloud.sun":
+        return 6
+    default:
+        return 3
+    }
 }
 
 #Preview {

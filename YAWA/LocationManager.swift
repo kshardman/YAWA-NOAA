@@ -459,14 +459,14 @@ final class ForecastViewModel: ObservableObject {
 
         // 1) Periods are required. If this fails, show the forecast error.
         do {
-            print("🌦️ forecast refresh lat=\(coord.latitude) lon=\(coord.longitude)")
+//            print("🌦️ forecast refresh lat=\(coord.latitude) lon=\(coord.longitude)")
             periods = try await service.fetch7DayPeriods(lat: coord.latitude, lon: coord.longitude)
             errorMessage = nil
         } catch {
             // ✅ Treat cancellations as normal (don’t show an error)
             if error is CancellationError { return }
             if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
-            print("🌦️ forecast ERROR:", error)
+//            print("🌦️ forecast ERROR:", error)
             errorMessage = "Forecast unavailable at this time."
             return
         }
@@ -474,8 +474,8 @@ final class ForecastViewModel: ObservableObject {
         // 2) Alerts are best-effort. If this fails, don't show a forecast error.
         do {
             alerts = try await service.fetchActiveAlerts(lat: coord.latitude, lon: coord.longitude)
-            print("🚨 alerts fetched:", alerts.map { $0.properties.event ?? "?" })
-            print("🚨 alert ids:", alerts.map { $0.id })
+//            print("🚨 alerts fetched:", alerts.map { $0.properties.event ?? "?" })
+//            print("🚨 alert ids:", alerts.map { $0.id })
             // ✅ notify once per new alert id (after alerts are updated)
             await notifyOnNewAlerts(locationTitle: nil)
         } catch {
