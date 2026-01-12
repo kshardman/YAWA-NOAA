@@ -73,12 +73,11 @@ final class NotificationsManager: ObservableObject {
         }
     }
 
-    func postNewAlertNotification(title: String, body: String, id: String) async {
-        // ✅ Respect the Settings toggle
-        guard alertsNotificationsEnabled else { return }
+    func postNewAlertNotification(title: String, body: String, id: String) async -> Bool {
+        guard alertsNotificationsEnabled else { return false }
 
         let ok = await requestPermissionIfNeeded()
-        guard ok else { return }
+        guard ok else { return false }
 
         let content = UNMutableNotificationContent()
         content.title = title
@@ -88,7 +87,12 @@ final class NotificationsManager: ObservableObject {
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
         let req = UNNotificationRequest(identifier: "nws.alert.\(id)", content: content, trigger: trigger)
 
-        try? await UNUserNotificationCenter.current().add(req)
+        do {
+            try await UNUserNotificationCenter.current().add(req)
+            return true
+        } catch {
+            return false
+        }
     }
     
     
