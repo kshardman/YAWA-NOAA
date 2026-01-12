@@ -1336,13 +1336,10 @@ private struct LocationsSheet: View {
                             .submitLabel(.search)
                             .focused($searchFocused)
                             .foregroundStyle(YAWATheme.textPrimary)
-                            .onSubmit {
-                                Task { await searchVM.search() }
-                            }
+                            .onSubmit { Task { await searchVM.search() } }
 
                         if searchVM.isSearching {
-                            ProgressView()
-                                .controlSize(.small)
+                            ProgressView().controlSize(.small)
                         }
 
                         if !searchVM.query.isEmpty {
@@ -1365,11 +1362,26 @@ private struct LocationsSheet: View {
                 if !searchVM.results.isEmpty {
                     Section {
                         ForEach(Array(searchVM.results.prefix(8))) { r in
-                            Button {
-                                if previousSourceRaw == nil {
-                                    previousSourceRaw = sourceRaw
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(r.title)
+                                        .foregroundStyle(YAWATheme.textPrimary)
+
+                                    if !r.subtitle.isEmpty {
+                                        Text(r.subtitle)
+                                            .font(.subheadline)
+                                            .foregroundStyle(YAWATheme.textSecondary)
+                                    }
                                 }
 
+                                Spacer()
+
+                                Image(systemName: "star") // hollow = not yet a favorite
+                                    .foregroundStyle(YAWATheme.textSecondary)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if previousSourceRaw == nil { previousSourceRaw = sourceRaw }
                                 sourceRaw = CurrentConditionsSource.noaa.rawValue
 
                                 let f = FavoriteLocation(
@@ -1386,27 +1398,7 @@ private struct LocationsSheet: View {
                                 searchVM.results = []
                                 searchFocused = false
                                 showingLocations = false
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(r.title)
-                                            .foregroundStyle(YAWATheme.textPrimary)
-
-                                        if !r.subtitle.isEmpty {
-                                            Text(r.subtitle)
-                                                .font(.subheadline)
-                                                .foregroundStyle(YAWATheme.textSecondary)
-                                        }
-                                    }
-
-                                    Spacer()
-
-                                    Image(systemName: "star")
-                                        .foregroundStyle(YAWATheme.textSecondary)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .buttonStyle(.plain)
                             .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
                             .listRowBackground(YAWATheme.card2)
                             .listRowSeparator(.hidden)
@@ -1421,7 +1413,19 @@ private struct LocationsSheet: View {
 
                 // MARK: - Current Location
                 Section {
-                    Button {
+                    HStack {
+                        Text("Current Location")
+                            .foregroundStyle(YAWATheme.textPrimary)
+
+                        Spacer()
+
+                        if selection.selectedFavorite == nil {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(YAWATheme.textSecondary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         selection.selectedFavorite = nil
 
                         if let prev = previousSourceRaw {
@@ -1432,20 +1436,7 @@ private struct LocationsSheet: View {
                         searchVM.query = ""
                         searchVM.results = []
                         searchFocused = false
-
                         showingLocations = false
-                    } label: {
-                        HStack {
-                            Text("Current Location")
-                                .foregroundStyle(YAWATheme.textPrimary)
-
-                            Spacer()
-
-                            if selection.selectedFavorite == nil {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(YAWATheme.textSecondary)
-                            }
-                        }
                     }
                 }
                 .listRowBackground(YAWATheme.card2)
@@ -1456,39 +1447,39 @@ private struct LocationsSheet: View {
                     if favorites.favorites.isEmpty {
                         Text("No favorites yet.")
                             .foregroundStyle(YAWATheme.textSecondary)
+                            .listRowBackground(YAWATheme.card2)
+                            .listRowSeparator(.hidden)
                     } else {
                         ForEach(favorites.favorites) { f in
-                            Button {
-                                if previousSourceRaw == nil {
-                                    previousSourceRaw = sourceRaw
-                                }
+                            HStack {
+                                Text(f.displayName)
+                                    .foregroundStyle(YAWATheme.textPrimary)
 
+                                Spacer()
+
+                                if selection.selectedFavorite?.id == f.id {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(YAWATheme.textSecondary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if previousSourceRaw == nil { previousSourceRaw = sourceRaw }
                                 sourceRaw = CurrentConditionsSource.noaa.rawValue
                                 selection.selectedFavorite = f
-
-                                searchVM.query = ""
-                                searchVM.results = []
-                                searchFocused = false
-
                                 showingLocations = false
-                            } label: {
-                                HStack {
-                                    Text(f.displayName)
-                                        .foregroundStyle(YAWATheme.textPrimary)
-
-                                    Spacer()
-
-                                    if selection.selectedFavorite?.id == f.id {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(YAWATheme.textSecondary)
-                                    }
+                            }
+                            // ✅ Swipe works reliably on non-Button row content
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    favorites.remove(f)
+                                } label: {
+                                    Image(systemName: "trash")
                                 }
+                                .tint(Color.red.opacity(0.35))
                             }
-                        }
-                        .onDelete { indexSet in
-                            for i in indexSet {
-                                favorites.remove(favorites.favorites[i])
-                            }
+                            .listRowBackground(YAWATheme.card2)
+                            .listRowSeparator(.hidden)
                         }
                     }
                 } header: {
@@ -1497,20 +1488,21 @@ private struct LocationsSheet: View {
                         .foregroundStyle(YAWATheme.textPrimary)
                 }
                 .textCase(nil)
-                .listRowBackground(YAWATheme.card2)
-                .listRowSeparator(.hidden)
             }
-            .buttonStyle(.plain)
-            .tint(YAWATheme.textSecondary)
             .scrollContentBackground(.hidden)
             .background(YAWATheme.sky)
+            .listStyle(.insetGrouped)
             .navigationTitle("Locations")
             .navigationBarTitleDisplayMode(.inline)
-            .listStyle(.insetGrouped)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { showingLocations = false }
-                        .foregroundStyle(YAWATheme.textSecondary)
+                    Button("Done") {
+                        searchVM.query = ""
+                        searchVM.results = []
+                        searchFocused = false
+                        showingLocations = false
+                    }
+                    .foregroundStyle(YAWATheme.textSecondary)
                 }
             }
         }
