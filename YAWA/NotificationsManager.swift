@@ -74,7 +74,9 @@ final class NotificationsManager: ObservableObject {
     }
 
     func postNewAlertNotification(title: String, body: String, id: String) async {
-        
+        // ✅ Respect the Settings toggle
+        guard alertsNotificationsEnabled else { return }
+
         let ok = await requestPermissionIfNeeded()
         guard ok else { return }
 
@@ -83,10 +85,12 @@ final class NotificationsManager: ObservableObject {
         content.body = body
         content.sound = .default
 
-        // Deliver immediately
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        let req = UNNotificationRequest(identifier: "nws.alert.\(abs(id.hashValue))", content: content, trigger: trigger)
+        let req = UNNotificationRequest(identifier: "nws.alert.\(id)", content: content, trigger: trigger)
 
         try? await UNUserNotificationCenter.current().add(req)
     }
+    
+    
+    
 }
