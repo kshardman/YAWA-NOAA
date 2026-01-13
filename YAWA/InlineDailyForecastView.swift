@@ -163,9 +163,11 @@ struct InlineDailyForecastView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(16)
-
-                    
                 }
+                .overlay(alignment: .top) {
+                        Divider()
+                        .background(Color.white.opacity(0.14))
+                    }
                 .navigationTitle(detail.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

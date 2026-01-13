@@ -59,9 +59,17 @@ struct SettingsView: View {
             
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    GlassyDoneButton {
+                    Button {
+                        // dismiss / done action
                         dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.white)
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
                 }
             }
             .task {

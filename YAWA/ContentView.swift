@@ -452,14 +452,26 @@ struct ContentView: View {
                         // ✅ Card styling so the content doesn’t blend into the sky
                         .padding(16)
                     }
+                    .overlay(alignment: .top) {
+                            Divider()
+                            .background(Color.white.opacity(0.18))
+                        }
                 }
                 .navigationTitle(detail.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        GlassyDoneButton {
+                        Button {
+                            // dismiss / done action
                             selectedDetail = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.white)
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
                     }
                 }
                 // ✅ Make the nav bar match the card surface
@@ -1509,13 +1521,30 @@ private struct LocationsSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        GlassyDoneButton {
+                        Button {
                             searchVM.query = ""
                             searchVM.results = []
                             searchFocused = false
                             showingLocations = false
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.white)
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
                     }
+                    
+                    
+//                    ToolbarItem(placement: .topBarTrailing) {
+//                        GlassyDoneButton {
+//                            searchVM.query = ""
+//                            searchVM.results = []
+//                            searchFocused = false
+//                            showingLocations = false
+//                        }
+//                    }
                 }
             // Nav bar glass + readable title (Daily Forecast style)
             .toolbarBackground(.visible, for: .navigationBar)
