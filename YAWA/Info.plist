@@ -6,5 +6,7 @@
 	<array>
 		<string>kpsorg.yawa.refresh</string>
 	</array>
+	<key>CFBundleGetInfoString</key>
+	<string></string>
 </dict>
 </plist>
