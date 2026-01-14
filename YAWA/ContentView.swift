@@ -191,10 +191,6 @@ struct ContentView: View {
 
 // MARK: Inline daily forecast (NOAA only) — scrolls under tiles
                 if source == .noaa {
-
-                    // Optional: keep the title “anchored” (so it doesn’t scroll away)
-                    // If your inlineForecastSection already includes a "Daily Forecast" title,
-                    // you can remove this Text block.
                     Text("Daily Forecast")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(YAWATheme.textPrimary)
@@ -202,7 +198,7 @@ struct ContentView: View {
 
                     ScrollView(showsIndicators: true) {
                         inlineForecastSection
-                            .padding(.bottom, 16)
+                            .padding(.bottom, 12)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(maxHeight: .infinity) // ✅ takes remaining space so it can scroll
@@ -391,7 +387,7 @@ struct ContentView: View {
 
                                     VStack(alignment: .leading, spacing: 12) {
                                         ForEach(sections) { s in
-                                            VStack(alignment: .leading, spacing: 6) {
+                                            VStack(alignment: .leading, spacing: 4) { // was 6
                                                 if let label = s.label {
                                                     Text(label)
                                                         .font(.headline)
@@ -563,7 +559,7 @@ struct ContentView: View {
     }
 
     private var inlineForecastSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 9) { // was 12
 
             // Header row (centered title + spinner on right)
             ZStack {
@@ -584,7 +580,7 @@ struct ContentView: View {
 
             // Alerts & Advisories (tap to expand)
             if let top = forecastVM.alerts.first {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) { // was 6
 //                    Text("Alerts/Advisories")
 //                        .font(.subheadline.weight(.semibold))
 //                        .foregroundStyle(YAWATheme.alertHeader)
@@ -1419,7 +1415,7 @@ private struct LocationsSheet: View {
                                 searchFocused = false
                                 showingLocations = false
                             }
-                            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                             .listRowBackground(YAWATheme.card2)
                             .listRowSeparator(.hidden)
                         }
