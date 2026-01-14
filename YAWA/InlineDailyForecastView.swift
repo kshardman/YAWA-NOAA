@@ -172,9 +172,9 @@ struct InlineDailyForecastView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        GlassyDoneButton {
-                            selectedDetail = nil
-                        }
+//                        GlassyDoneButton {
+//                            selectedDetail = nil
+//                        }
                     }
                 }
             }

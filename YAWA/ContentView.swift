@@ -346,10 +346,10 @@ struct ContentView: View {
                         triggerEasterEgg()
                     }
             }
-
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { showingLocations = true } label: { Image(systemName: "star.circle.fill") }
-                Button { showingSettings = true } label: { Image(systemName: "gearshape.fill") }
+                ToolbarIconButton("star.circle.fill", tint: .white) { showingLocations = true }
+                ToolbarIconButton("gearshape.fill", tint: .white) { showingSettings = true }
+
             }
         }
         .tint(YAWATheme.textSecondary)
@@ -452,32 +452,28 @@ struct ContentView: View {
                         // ✅ Card styling so the content doesn’t blend into the sky
                         .padding(16)
                     }
-                    .overlay(alignment: .top) {
-                            Divider()
+                    // added this
+                    .safeAreaInset(edge: .top) {
+                        Divider()
                             .background(Color.white.opacity(0.18))
-                        }
+                    }
                 }
                 .navigationTitle(detail.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            // dismiss / done action
-                            selectedDetail = nil
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(.white)
+                        ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
+                                selectedDetail = nil
+                            }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
-                    }
                 }
                 // ✅ Make the nav bar match the card surface
+//                .toolbarBackground(.visible, for: .navigationBar)
+//                .toolbarBackground(YAWATheme.card2, for: .navigationBar)
+//                .toolbarColorScheme(.dark, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
-                .toolbarBackground(YAWATheme.card2, for: .navigationBar)
-            }
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                .preferredColorScheme(.dark)            }
             // ✅ Keeps the sheet “dark” consistently even if system flips appearance
             .preferredColorScheme(.dark)
             .presentationDetents([.medium, .large])
@@ -1521,35 +1517,21 @@ private struct LocationsSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            searchVM.query = ""
-                            searchVM.results = []
-                            searchFocused = false
-                            showingLocations = false
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(.white)
+                        ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
+                                searchVM.query = ""
+                                searchVM.results = []
+                                searchFocused = false
+                                showingLocations = false
+                            }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
-                    }
-                    
-                    
-//                    ToolbarItem(placement: .topBarTrailing) {
-//                        GlassyDoneButton {
-//                            searchVM.query = ""
-//                            searchVM.results = []
-//                            searchFocused = false
-//                            showingLocations = false
-//                        }
-//                    }
                 }
             // Nav bar glass + readable title (Daily Forecast style)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(YAWATheme.card2, for: .navigationBar)   // ✅ tint like Daily Forecast
-            .toolbarColorScheme(.dark, for: .navigationBar)
+//            .toolbarBackground(.visible, for: .navigationBar)
+//            .toolbarBackground(YAWATheme.card2, for: .navigationBar)   // ✅ tint like Daily Forecast
+//            .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                .preferredColorScheme(.dark)
             .preferredColorScheme(.dark)
         }
     }

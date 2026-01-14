@@ -59,18 +59,10 @@ struct SettingsView: View {
             
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        // dismiss / done action
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(.white)
+                    ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
+                            dismiss()
+                        }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
-                }
             }
             .task {
                 await notifications.refreshAuthorizationStatus()

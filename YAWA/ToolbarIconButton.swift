@@ -1,25 +1,28 @@
+//
+//  ToolbarIconButton.swift
+//  YAWA
+//
+//  Created by Keith Sharman on 1/13/26.
+//
+
+
 import SwiftUI
 
-/// Reusable toolbar icon button with optical sizing rules:
-/// - Dense symbols (xmark, plus, etc.) render smaller so they match gear/star visually.
-/// - Supports tint + optional background "pill" if you want it later.
 struct ToolbarIconButton: View {
     enum Style {
-        case plain                    // just the icon
-        case pill(background: AnyShapeStyle = AnyShapeStyle(.ultraThinMaterial),
-                  strokeOpacity: Double = 0.16,
-                  fillOpacity: Double = 0.14)
+        case pill
+        case plain
     }
 
     let systemName: String
     var tint: Color = .white
-    var style: Style = .plain
+    var style: Style = .pill
     var action: () -> Void
 
     init(
         _ systemName: String,
         tint: Color = .white,
-        style: Style = .plain,
+        style: Style = .pill,
         action: @escaping () -> Void
     ) {
         self.systemName = systemName
@@ -30,38 +33,44 @@ struct ToolbarIconButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: metrics.size, weight: metrics.weight))
-                // tiny optical nudge: dense icons feel high/large otherwise
-                .baselineOffset(metrics.baselineOffset)
+            Image(systemName: systemNameToRender)
+                .symbolRenderingMode(.monochrome)
+                .font(.system(size: iconSize, weight: .semibold))
                 .foregroundStyle(tint)
-                .frame(width: 32, height: 32) // consistent tap target
+                .frame(width: 34, height: 34)     // match star/gear tap target
                 .background(backgroundView)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
     }
 
-    // MARK: - Optical metrics
-
-    private var metrics: (size: CGFloat, weight: Font.Weight, baselineOffset: CGFloat) {
-        let name = systemName
-
-        // Dense symbols that visually read bigger
-        if name == "xmark" || name == "xmark.circle.fill" || name == "xmark.circle" {
-            return (15, .medium, 0)   // ✅ makes it match gear/star
+    // Force plain xmark so you don't double-circle it accidentally
+    private var systemNameToRender: String {
+        if systemName == "xmark.circle" || systemName == "xmark.circle.fill" {
+            return "xmark"
         }
-
-        // Common "toolbar" icons you already use
-        if name.contains("gearshape") || name.contains("star") {
-            return (17, .semibold, 0)
-        }
-
-        // Default
-        return (17, .semibold, 0)
+        return systemName
     }
 
-    // MARK: - Background styles
+    private var iconSize: CGFloat {
+        switch systemName {
+        case "xmark", "xmark.circle", "xmark.circle.fill":
+            return 14   // dense symbol → smaller
+        case "star.circle.fill", "gearshape.fill":
+            return 17   // your baseline
+        default:
+            return 17
+        }
+    }
+
+    private var iconWeight: Font.Weight {
+        switch systemName {
+        case "xmark", "xmark.circle", "xmark.circle.fill":
+            return .semibold
+        default:
+            return .semibold
+        }
+    }
 
     @ViewBuilder
     private var backgroundView: some View {
@@ -69,22 +78,16 @@ struct ToolbarIconButton: View {
         case .plain:
             EmptyView()
 
-        case .pill(let background, let strokeOpacity, let fillOpacity):
-            Capsule()
-                .fill(background)
+        case .pill:
+            Circle()
+                .fill(Color.white.opacity(0.10))                 // consistent “glass”
                 .overlay(
-                    Capsule()
-                        .stroke(Color.white.opacity(strokeOpacity), lineWidth: 0.75)
-                )
-                .overlay(
-                    Capsule()
-                        .fill(Color.white.opacity(fillOpacity))
+                    Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.8)
                 )
         }
     }
 
     private var accessibilityLabel: String {
-        // You can improve this if you want
-        systemName
+        systemNameToRender
     }
 }
