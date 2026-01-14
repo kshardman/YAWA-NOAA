@@ -26,6 +26,8 @@ struct ContentView: View {
     @EnvironmentObject private var selection: LocationSelectionStore
     
     @State private var selectedDetail: DetailPayload?
+    @State private var showingAllAlerts = false
+    
 
     private enum DetailBody {
         case text(String)
@@ -475,6 +477,39 @@ struct ContentView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        
+//  MARK: new alerts
+        
+        .sheet(isPresented: $showingAllAlerts) {
+            NavigationStack {
+                List {
+                    ForEach(forecastVM.alerts) { a in
+                        InlineAlertRow(alert: a)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                showingAllAlerts = false
+                                openAlertDetail(a)
+                            }
+                            .listRowBackground(YAWATheme.card2)
+                            .listRowSeparator(.hidden)
+                    }
+                }
+                .scrollContentBackground(.hidden)
+                .background(YAWATheme.sky)
+                .navigationTitle("Alerts")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
+                            showingAllAlerts = false
+                        }
+                    }
+                }
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(YAWATheme.card2, for: .navigationBar)
+            }
+            .preferredColorScheme(.dark)
+        }
 
         // ============================
         // 🔼 CODE SNIPPET 1 ENDS HERE
@@ -579,46 +614,33 @@ struct ContentView: View {
             }
 
             // Alerts & Advisories (tap to expand)
-            if let top = forecastVM.alerts.first {
-                VStack(alignment: .leading, spacing: 4) { // was 6
-//                    Text("Alerts/Advisories")
+            // Alerts & Advisories (tap to expand)
+            if let first = forecastVM.alerts.first {
+                VStack(alignment: .leading, spacing: 8) {
+//                    Text("Alerts & Advisories - new")
 //                        .font(.subheadline.weight(.semibold))
-//                        .foregroundStyle(YAWATheme.alertHeader)
+//                        .foregroundStyle(YAWATheme.textPrimary) // or your yellow label
 
-                    InlineAlertRow(alert: top)
+                    // Show the first alert row (tap opens detail)
+                    InlineAlertRow(alert: first)
+                        .contentShape(Rectangle())
+                        .onTapGesture { openAlertDetail(first) }
 
+                    // If there are more, show a tappable "X more…" line that opens list
                     if forecastVM.alerts.count > 1 {
-                        Text("\(forecastVM.alerts.count - 1) more…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Button {
+                            showingAllAlerts = true
+                        } label: {
+                            Text("\(forecastVM.alerts.count - 1) more…")
+                                .font(.caption)
+                                .foregroundStyle(YAWATheme.textSecondary)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(10)
                 .background(YAWATheme.card2)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    let p = top.properties
-
-                    let description: String? = {
-                        guard let desc = p.descriptionText, !desc.isEmpty else { return nil }
-                        let formatted = normalizeParagraphNewlines(formatNOAAAlertBody(desc))
-                        return formatted.isEmpty ? nil : formatted
-                    }()
-
-                    let instructions: [String] = {
-                        guard let instr = p.instructionText, !instr.isEmpty else { return [] }
-                        let formattedInstr = formatNOAAInstructions(instr)
-                        return parseInstructionItems(from: formattedInstr)
-                    }()
-
-                    selectedDetail = DetailPayload(
-                        title: p.event,
-                        description: description,
-                        instructions: instructions,
-                        severity: p.severity
-                    )
-                }
             }
 
             // Forecast rows
@@ -1085,6 +1107,29 @@ struct ContentView: View {
             .filter { !$0.isEmpty }
 
         return cleaned.joined(separator: "\n\n")
+    }
+    
+    private func openAlertDetail(_ alert: NWSAlertsResponse.Feature) {
+        let p = alert.properties
+
+        let description: String? = {
+            guard let desc = p.descriptionText, !desc.isEmpty else { return nil }
+            let formatted = normalizeParagraphNewlines(formatNOAAAlertBody(desc))
+            return formatted.isEmpty ? nil : formatted
+        }()
+
+        let instructions: [String] = {
+            guard let instr = p.instructionText, !instr.isEmpty else { return [] }
+            let formattedInstr = formatNOAAInstructions(instr)
+            return parseInstructionItems(from: formattedInstr)
+        }()
+
+        selectedDetail = DetailPayload(
+            title: p.event,
+            description: description,
+            instructions: instructions,
+            severity: p.severity
+        )
     }
 
     private func normalizeInlineSpacing(_ s: String) -> String {
@@ -1559,6 +1604,8 @@ private func iconYOffset(symbol: String, hasPop: Bool) -> CGFloat {
         return 3
     }
 }
+
+
 
 #Preview {
     NavigationStack { ContentView() }
