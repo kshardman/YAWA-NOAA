@@ -1,3 +1,11 @@
+//
+//  RadarView.swift
+//  YAWA
+//
+//  Created by Keith Sharman on 1/15/26.
+//
+
+
 import SwiftUI
 
 struct RadarView: View {
@@ -8,21 +16,28 @@ struct RadarView: View {
 
     @State private var isLoading = true
     @State private var estimatedProgress: Double = 0
-
+    
+    @State private var reloadToken = 0
+    
     // Tune these later
-    private let zoomLevel = 7
-
+    private let radarZoom: Double = 9
+    
     var body: some View {
         NavigationStack {
             ZStack {
                 YAWATheme.sky.ignoresSafeArea()
 
-                if let url = Self.makeNwsSatRadURL(
+                if let url = Self.makeNwsWeatherLoopURL(
                     latitude: target.latitude,
                     longitude: target.longitude,
-                    zoom: zoomLevel
+                    zoom: radarZoom
                 ) {
-                    RadarWebView(url: url, isLoading: $isLoading, estimatedProgress: $estimatedProgress)
+                    RadarWebView(
+                        url: url,
+                        reloadToken: reloadToken,
+                        isLoading: $isLoading,
+                        estimatedProgress: $estimatedProgress
+                    )
                         .ignoresSafeArea(edges: .bottom)
 
                     if isLoading {
@@ -63,34 +78,43 @@ struct RadarView: View {
 
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        // Force reload by “changing” the URL: simplest is open in Safari for now
-                        if let url = Self.makeNwsSatRadURL(
-                            latitude: target.latitude,
-                            longitude: target.longitude,
-                            zoom: zoomLevel
-                        ) {
-                            openURL(url)
-                        }
+                        reloadToken += 1
                     } label: {
-                        Image(systemName: "safari")
+                        Image(systemName: "arrow.clockwise")
                     }
-                    .accessibilityLabel("Open in Safari")
                 }
             }
         }
     }
 
-    /// NWS Sat/Radar/Lightning loop viewer centered on a point.
-    /// Documented URL parameters include lt, ln, zm, hidemenu, nolabel, etc.  [oai_citation:1‡National Weather Service](https://www.weather.gov/zse/SatRad?utm_source=chatgpt.com)
-    static func makeNwsSatRadURL(latitude: Double, longitude: Double, zoom: Int) -> URL? {
-        var components = URLComponents(string: "https://www.weather.gov/zse/SatRad")
+    static func makeNwsWeatherLoopURL(latitude: Double, longitude: Double, zoom: Double) -> URL? {
+        var components = URLComponents(string: "https://www.weather.gov/zse/WeatherLoop")
         components?.queryItems = [
             .init(name: "lt", value: String(format: "%.5f", latitude)),
             .init(name: "ln", value: String(format: "%.5f", longitude)),
-            .init(name: "zm", value: "\(max(0, min(12, zoom)))"),
-            .init(name: "hidemenu", value: "1"),
-            .init(name: "nolabel", value: "1")
+            .init(name: "zm", value: String(format: "%.1f", zoom)),
+            .init(name: "rad", value: "2"),      // radar on
+            .init(name: "ltg", value: "1"),      // lightning on (optional)
+            .init(name: "namr", value: "2"),     // base reflectivity (common)
+            .init(name: "frames", value: "7"),
+            .init(name: "intvl", value: "10"),
+            .init(name: "label", value: "0"),
+            .init(name: "mobile", value: "")
         ]
         return components?.url
     }
+    
+//    /// NWS Sat/Radar/Lightning loop viewer centered on a point.
+//    /// Documented URL parameters include lt, ln, zm, hidemenu, nolabel, etc.  [oai_citation:1‡National Weather Service](https://www.weather.gov/zse/SatRad?utm_source=chatgpt.com)
+//    static func makeNwsSatRadURL(latitude: Double, longitude: Double, zoom: Int) -> URL? {
+//        var components = URLComponents(string: "https://www.weather.gov/zse/SatRad")
+//        components?.queryItems = [
+//            .init(name: "lt", value: String(format: "%.5f", latitude)),
+//            .init(name: "ln", value: String(format: "%.5f", longitude)),
+//            .init(name: "zm", value: "\(max(0, min(12, zoom)))"),
+//            .init(name: "hidemenu", value: "1"),
+//            .init(name: "nolabel", value: "1")
+//        ]
+//        return components?.url
+//    }
 }

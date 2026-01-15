@@ -58,6 +58,9 @@ final class WeatherViewModel: ObservableObject {
 
     private let service = WeatherService()
     private let noaaCurrent = NOAACurrentConditionsService()
+    
+    @Published var activeCoordinate: CLLocationCoordinate2D? = nil
+    @Published var activeLocationTitle: String = "Current Location"
    
     // ✅ Visual cue: clear tile values while we fetch new data
     func setLoadingPlaceholders() {

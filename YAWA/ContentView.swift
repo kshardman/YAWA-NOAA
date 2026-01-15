@@ -3,46 +3,51 @@ import Combine
 import CoreLocation
 
 struct RadarViewPlaceholder: View {
+    let latitude: Double
+    let longitude: Double
+    let title: String
+
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                // Match your app background
-                YAWATheme.sky.ignoresSafeArea()
+            VStack(spacing: 16) {
+                Text("Radar coming soon")
+                    .font(.title2)
+                    .foregroundStyle(YAWATheme.textPrimary)
 
-                VStack(spacing: 16) {
-                    Image(systemName: "dot.radiowaves.left.and.right")
-                        .font(.system(size: 48, weight: .semibold))
-                        .foregroundStyle(YAWATheme.textSecondary)
+                Text("\(title)\n\(latitude), \(longitude)")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(YAWATheme.textSecondary)
+                    .monospacedDigit()
 
-                    Text("Radar coming soon")
-                        .font(.headline)
-                        .foregroundStyle(YAWATheme.textPrimary)
-
-                    Text("This view will show live precipitation and storm data.")
-                        .font(.callout)
-                        .foregroundStyle(YAWATheme.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-
-                    Spacer()
-                }
-                .padding(.top, 40)
-            }
-            .navigationTitle("Radar")
+                Spacer()
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.system(size: 48))
+                    .foregroundStyle(YAWATheme.textTertiary)
+                    .padding(.bottom, 8)            }
+            .padding()
+            .background(YAWATheme.sky.ignoresSafeArea())
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
-                        dismiss()
-                    }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(YAWATheme.card2, for: .navigationBar)
         }
-        .preferredColorScheme(.dark)
+    }
+}
+
+struct RadarTarget: Identifiable, Equatable {
+    let id = UUID()
+    let latitude: Double
+    let longitude: Double
+    let title: String
+
+    var coordinate: CLLocationCoordinate2D {
+        .init(latitude: latitude, longitude: longitude)
     }
 }
 
@@ -73,7 +78,38 @@ struct ContentView: View {
     @State private var selectedDetail: DetailPayload?
     @State private var showingAllAlerts = false
     
-    @State private var showingRadar = false
+ //   @State private var showingRadar = false
+    @State private var radarTarget: RadarTarget?
+    
+    @StateObject private var locationManager = LocationManager()
+
+    // nil = “use GPS”; non-nil = user selected a city/favorite
+    @State private var selectedCity: CitySearchViewModel.Result?
+    
+    private var activeRadarTarget: RadarTarget? {
+        // 1) If user selected a city/favorite, prefer it
+        if let sel = selectedCity {
+            let title = sel.subtitle.isEmpty ? sel.title : "\(sel.title), \(sel.subtitle)"
+            return RadarTarget(
+                latitude: sel.coordinate.latitude,
+                longitude: sel.coordinate.longitude,
+                title: title
+            )
+        }
+
+        // 2) Otherwise fall back to GPS
+        if let coord = locationManager.coordinate {
+            return RadarTarget(
+                latitude: coord.latitude,
+                longitude: coord.longitude,
+                title: locationManager.locationName ?? "Current Location"
+            )
+        }
+
+        // 3) No location available yet
+        return nil
+    }
+    
     
 
     private enum DetailBody {
@@ -290,11 +326,14 @@ struct ContentView: View {
             }
 
         }
-
+//        .onAppear {
+//                locationManager.request()
+//            }
         // ============================
         // 🔽 CODE SNIPPET 1 STARTS HERE
         // ============================
 
+        
         .task {
             // 🔔 Ask for notification permission once on launch
             await NotificationService.shared.requestAuthorizationIfNeeded()
@@ -408,9 +447,10 @@ struct ContentView: View {
                 previousSourceRaw: $previousSourceRaw
             )
         }
-        .sheet(isPresented: $showingRadar) {
-            RadarViewPlaceholder()
-                .preferredColorScheme(.dark)
+        .sheet(item: $radarTarget) { target in
+            RadarView(target: target)
+                .presentationDetents([.large]) // optional
+                .presentationDragIndicator(.visible)     // optional
         }
         .sheet(item: $selectedDetail) { detail in
             NavigationStack {
@@ -791,7 +831,30 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
+//  MARK: OPENRADAR
+    private func openRadar() {
+        // compute the new target first
+        let newTarget: RadarTarget?
 
+        if let fav: FavoriteLocation = selection.selectedFavorite {
+            newTarget = RadarTarget(latitude: fav.latitude, longitude: fav.longitude, title: fav.displayName)
+        } else if let coord = location.coordinate {
+            newTarget = RadarTarget(latitude: coord.latitude, longitude: coord.longitude, title: location.locationName ?? "Current Location")
+        } else {
+            newTarget = RadarTarget(latitude: 0, longitude: 0, title: "Location unavailable")
+        }
+
+        // If sheet is already open, reset then set so SwiftUI re-presents with new item
+        if radarTarget != nil {
+            radarTarget = nil
+            DispatchQueue.main.async {
+                radarTarget = newTarget
+            }
+        } else {
+            radarTarget = newTarget
+        }
+    }
+    
     private var bigTempTile: some View {
         ZStack {
             VStack {
@@ -815,7 +878,7 @@ struct ContentView: View {
 
                 // Bottom: radar button
                 Button {
-                    showingRadar = true
+                    openRadar()
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "dot.radiowaves.left.and.right")
