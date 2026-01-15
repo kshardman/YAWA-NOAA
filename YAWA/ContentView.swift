@@ -2,6 +2,51 @@ import SwiftUI
 import Combine
 import CoreLocation
 
+struct RadarViewPlaceholder: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                // Match your app background
+                YAWATheme.sky.ignoresSafeArea()
+
+                VStack(spacing: 16) {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.system(size: 48, weight: .semibold))
+                        .foregroundStyle(YAWATheme.textSecondary)
+
+                    Text("Radar coming soon")
+                        .font(.headline)
+                        .foregroundStyle(YAWATheme.textPrimary)
+
+                    Text("This view will show live precipitation and storm data.")
+                        .font(.callout)
+                        .foregroundStyle(YAWATheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+
+                    Spacer()
+                }
+                .padding(.top, 40)
+            }
+            .navigationTitle("Radar")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
+                        dismiss()
+                    }
+                }
+            }
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(YAWATheme.card2, for: .navigationBar)
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+
 struct ContentView: View {
     @StateObject private var networkMonitor = NetworkMonitor()
     @StateObject private var viewModel = WeatherViewModel()
@@ -27,6 +72,8 @@ struct ContentView: View {
     
     @State private var selectedDetail: DetailPayload?
     @State private var showingAllAlerts = false
+    
+    @State private var showingRadar = false
     
 
     private enum DetailBody {
@@ -360,6 +407,10 @@ struct ContentView: View {
                 sourceRaw: $sourceRaw,
                 previousSourceRaw: $previousSourceRaw
             )
+        }
+        .sheet(isPresented: $showingRadar) {
+            RadarViewPlaceholder()
+                .preferredColorScheme(.dark)
         }
         .sheet(item: $selectedDetail) { detail in
             NavigationStack {
@@ -740,13 +791,19 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
+
     private var bigTempTile: some View {
-        ZStack(alignment: .top) {
-
-            // Temperature centered vertically
+        ZStack {
             VStack {
-                Spacer(minLength: 0)
+                // Top: thermometer
+                Image(systemName: "thermometer")
+                    .foregroundStyle(.red)
+                    .font(tempIconFont)
+                    .padding(.top, 10)
 
+                Spacer(minLength: 8)
+
+                // Middle: temperature
                 Text(viewModel.temp)
                     .font(.system(size: tempFontSize, weight: .semibold))
                     .foregroundStyle(YAWATheme.textPrimary)
@@ -754,20 +811,63 @@ struct ContentView: View {
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
 
-                Spacer(minLength: 0)
-            }
+                Spacer(minLength: 12)
 
-            // Thermometer icon “floats” near the top
-            Image(systemName: "thermometer")
-                .foregroundStyle(.red)
-                .font(tempIconFont)
-                .padding(.top, 10)
+                // Bottom: radar button
+                Button {
+                    showingRadar = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                        Text("Radar")
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(YAWATheme.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 12)
+            }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: bigMinHeight * 1.15) // lock height
+        .frame(height: bigMinHeight * 1.15)
         .background(YAWATheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
+    
+//    private var bigTempTile: some View {
+//        ZStack(alignment: .top) {
+//
+//            // Temperature centered vertically
+//            VStack {
+//                Spacer(minLength: 0)
+//
+//                Text(viewModel.temp)
+//                    .font(.system(size: tempFontSize, weight: .semibold))
+//                    .foregroundStyle(YAWATheme.textPrimary)
+//                    .monospacedDigit()
+//                    .minimumScaleFactor(0.6)
+//                    .lineLimit(1)
+//
+//                Spacer(minLength: 0)
+//            }
+//
+//            // Thermometer icon “floats” near the top
+//            Image(systemName: "thermometer")
+//                .foregroundStyle(.red)
+//                .font(tempIconFont)
+//                .padding(.top, 10)
+//        }
+//        .frame(maxWidth: .infinity)
+//        .frame(height: bigMinHeight * 1.15) // lock height
+//        .background(YAWATheme.card)
+//        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+//    }
 
     private func miniTile(_ systemImage: String, _ color: Color, _ value: String) -> some View {
         VStack(spacing: 8) {
