@@ -9,6 +9,12 @@ struct YAWAApp: App {
     @StateObject private var selection = LocationSelectionStore()
 
     init() {
+        URLCache.shared = URLCache(
+                    memoryCapacity: 64 * 1024 * 1024,
+                    diskCapacity: 256 * 1024 * 1024,
+                    diskPath: "radarTileCache"
+                )
+        
         // ✅ Don’t globally force blur/material. Let SwiftUI per-screen
         // `.toolbarBackground(... for: .navigationBar)` control the “liquid glass” look.
         let appearance = UINavigationBarAppearance()

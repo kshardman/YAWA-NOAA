@@ -9,16 +9,49 @@ import SwiftUI
 
 // MARK: - Forecast icon + color
 
-func forecastSymbolAndColor(for shortForecast: String, isDaytime: Bool) -> (symbol: String, color: Color) {
-    let s = shortForecast.lowercased()
+
+func forecastSymbolAndColor(
+    for shortForecast: String,
+    detailedForecast: String? = nil,
+    isDaytime: Bool
+) -> (symbol: String, color: Color) {
+
+    // Combine both — NOAA sometimes only says “snow” in detailedForecast
+    let s = (shortForecast + " " + (detailedForecast ?? "")).lowercased()
 
     // Thunder / severe
-    if s.contains("thunder") || s.contains("t-storm") || s.contains("storm") {
+    if s.contains("thunder") || s.contains("t-storm") || s.contains("tstorm") || s.contains("storm") {
         return ("cloud.bolt.rain.fill", .purple)
     }
 
-    // Snow / sleet / wintry
-    if s.contains("snow") || s.contains("sleet") || s.contains("flurr") || s.contains("wintry") || s.contains("ice") {
+    // Wintry / snow (do this BEFORE rain)
+    let hasSnowyWords =
+        s.contains("snow") ||
+        s.contains("flurr") ||          // flurries
+        s.contains("sleet") ||
+        s.contains("wintry") ||
+        s.contains("ice") ||
+        s.contains("freezing") ||       // freezing rain / freezing drizzle
+        s.contains("blizzard") ||
+        s.contains("blowing snow")
+
+    
+//    if hasSnowyWords {
+//        if s.contains("rain") && s.contains("snow") {
+//            return ("cloud.sleet.fill", .cyan)
+//        }
+//        return ("snowflake", .cyan)
+//    }
+    
+    if hasSnowyWords {
+        // Mixed precip: rain + snow present
+        if s.contains("rain") && s.contains("snow") {
+            return ("cloud.sleet.fill", .cyan)
+        }
+        // Freezing rain is more “ice” than rain in user expectation
+        if s.contains("freezing rain") || s.contains("freezing drizzle") {
+            return ("cloud.hail.fill", .cyan) // or keep cloud.snow.fill if you prefer
+        }
         return ("cloud.snow.fill", .cyan)
     }
 
@@ -34,13 +67,7 @@ func forecastSymbolAndColor(for shortForecast: String, isDaytime: Bool) -> (symb
 
     // Cloudy variants
     if s.contains("mostly cloudy") || s.contains("partly cloudy") || s.contains("partly sunny") || s.contains("mostly sunny") {
-        if isDaytime {
-            // show sun+cloud during day
-            return ("cloud.sun.fill", .orange)
-        } else {
-            // moon+cloud at night
-            return ("cloud.moon.fill", .gray)
-        }
+        return isDaytime ? ("cloud.sun.fill", .orange) : ("cloud.moon.fill", .gray)
     }
 
     if s.contains("cloudy") || s.contains("overcast") {
@@ -52,9 +79,10 @@ func forecastSymbolAndColor(for shortForecast: String, isDaytime: Bool) -> (symb
         return (isDaytime ? "sun.max.fill" : "moon.stars.fill", isDaytime ? .yellow : .indigo)
     }
 
-    // Fallback
     return ("questionmark.circle", .secondary)
 }
+
+
 
 // MARK: - Day name abbreviations
 

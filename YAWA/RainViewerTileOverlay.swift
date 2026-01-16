@@ -25,36 +25,64 @@ final class RainViewerTileOverlay: MKTileOverlay {
     private let snow: Int
     private let size: TileSize
     private let maxZoom: Int
+    
+    private(set) var lastRequestedZoom: Int = 0
+    
 
     init(host: String,
          framePath: String,
          colorScheme: Int = 2,
          smooth: Bool = true,
          snow: Bool = false,
-         size: TileSize = .s512,
-         maxZoom: Int = 10) {
+         size: TileSize = .s256,
+         maxZoom: Int = 7) {
 
         self.host = host
         self.framePath = framePath
         self.colorScheme = colorScheme
         self.smooth = smooth ? 1 : 0
         self.snow = snow ? 1 : 0
-        self.size = size
-        self.maxZoom = maxZoom
 
-        // urlTemplate exists, but we override url(forTilePath:) for full control.
+        let clampedMaxZoom = min(maxZoom, 7)
+        self.size = size
+        self.maxZoom = clampedMaxZoom
+
         super.init(urlTemplate: nil)
+
+        self.minimumZ = 0
+        self.maximumZ = clampedMaxZoom
+        self.isGeometryFlipped = false
+
         canReplaceMapContent = false
         tileSize = CGSize(width: size.rawValue, height: size.rawValue)
     }
-
+    
+    
     override func url(forTilePath path: MKTileOverlayPath) -> URL {
-        let z = min(path.z, maxZoom)
+        // If MapKit asks for tiles beyond provider max zoom, map to max zoom tiles correctly.
+        // IMPORTANT: You must also scale x/y down when reducing z.
+        
+        lastRequestedZoom = path.z
+        
+        var z = path.z
+        var x = path.x
+        var y = path.y
 
-        // RainViewer expects normal XYZ: z/x/y
+        if z > maxZoom {
+            let dz = z - maxZoom
+            z = maxZoom
+            x = x >> dz
+            y = y >> dz
+        }
+
         let urlString =
-        "\(host)\(framePath)/\(size.rawValue)/\(z)/\(path.x)/\(path.y)/\(colorScheme)/\(smooth)_\(snow).png"
+        "\(host)\(framePath)/\(size.rawValue)/\(z)/\(x)/\(y)/\(colorScheme)/\(smooth)_\(snow).png"
 
+ // MARK: debug
+        if path.z > maxZoom {
+            print("Radar over-zoom: requested z=\(path.z) clamped to \(maxZoom)")
+        }
+        
         return URL(string: urlString)!
     }
 }

@@ -742,7 +742,12 @@ struct ContentView: View {
                     Array(combineDayNight(Array(forecastVM.periods.prefix(14))).prefix(7))
 
                 ForEach(forecastDays, id: \.id) { d in
-                    let sym = forecastSymbolAndColor(for: d.day.shortForecast, isDaytime: true)
+ //                   let sym = forecastSymbolAndColor(for: d.day.shortForecast, isDaytime: true)
+                    let sym = forecastSymbolAndColor(
+                        for: d.day.shortForecast,
+                        detailedForecast: d.day.detailedForecast,
+                        isDaytime: d.day.isDaytime
+                    )
 
                     HStack(spacing: 10) {
 
@@ -902,35 +907,7 @@ struct ContentView: View {
         .background(YAWATheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
-    
-//    private var bigTempTile: some View {
-//        ZStack(alignment: .top) {
-//
-//            // Temperature centered vertically
-//            VStack {
-//                Spacer(minLength: 0)
-//
-//                Text(viewModel.temp)
-//                    .font(.system(size: tempFontSize, weight: .semibold))
-//                    .foregroundStyle(YAWATheme.textPrimary)
-//                    .monospacedDigit()
-//                    .minimumScaleFactor(0.6)
-//                    .lineLimit(1)
-//
-//                Spacer(minLength: 0)
-//            }
-//
-//            // Thermometer icon “floats” near the top
-//            Image(systemName: "thermometer")
-//                .foregroundStyle(.red)
-//                .font(tempIconFont)
-//                .padding(.top, 10)
-//        }
-//        .frame(maxWidth: .infinity)
-//        .frame(height: bigMinHeight * 1.15) // lock height
-//        .background(YAWATheme.card)
-//        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-//    }
+
 
     private func miniTile(_ systemImage: String, _ color: Color, _ value: String) -> some View {
         VStack(spacing: 8) {

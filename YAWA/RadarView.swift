@@ -17,9 +17,15 @@ struct RadarView: View {
     @State private var tickTask: Task<Void, Never>?
 
     private let service = RainViewerRadarService()
-
+    
+    private let instanceID = UUID()
+    
+    @State private var didLoadFrames = false
+    
+    @State private var didStartPlayback = false
+    
     // Consumer-friendly: start close (MapKit controls zoom; this is “radius shown”)
-    private let initialRadiusMeters: CLLocationDistance = 60_000 //  tweak as desired
+    private let initialRadiusMeters: CLLocationDistance = 75_000 //  tweak as desired
 
     var body: some View {
         NavigationStack {
@@ -32,7 +38,13 @@ struct RadarView: View {
                     RadarMapView(
                         center: CLLocationCoordinate2D(latitude: target.latitude, longitude: target.longitude),
                         initialRadiusMeters: initialRadiusMeters,
-                        overlay: .init(host: host, framePath: frame.path, opacity: 0.70)
+                        overlay: .init(
+                            host: host,
+                            framePath: frame.path,
+                            opacity: 0.7
+                        ),
+                        animateTransition: didStartPlayback
+  //                      animateTransition: isPlaying
                     )
                     .ignoresSafeArea(edges: .bottom)
 
@@ -82,9 +94,16 @@ struct RadarView: View {
                     .accessibilityLabel(isPlaying ? "Pause radar" : "Play radar")
                 }
             }
+//            .task {
+//                await loadFrames()
+//            }
             .task {
+                print("RadarView instance:", instanceID)
+                guard !didLoadFrames else { return }
+                didLoadFrames = true
                 await loadFrames()
             }
+
             .onDisappear {
                 stopTick()
             }
@@ -96,27 +115,37 @@ struct RadarView: View {
         errorText = nil
         defer { isLoading = false }
 
+        print("loadFrames() CALLED", Date())
+        
         do {
             let maps = try await service.fetchWeatherMaps()
-            guard let frame = service.pickDefaultFrame(from: maps) else {
+
+            // Pick a fallback frame in case "past" is empty
+            guard let fallbackFrame = service.pickDefaultFrame(from: maps) else {
                 errorText = "No radar frames available."
                 return
             }
 
             self.host = maps.host
-            // Use “past” for playback; it’s usually 2 hours in 10-min steps.  [oai_citation:8‡Rain Viewer](https://www.rainviewer.com/api/weather-maps-api.html)
-            let past = maps.radar.past ?? [frame]
-            self.frames = past
-            self.frameIndex = max(0, past.count - 1) // start at latest
+
+            // Keep playback lightweight: last 8 frames only
+            let past = maps.radar.past ?? []
+            let trimmed = Array(past.suffix(8))
+
+            self.frames = trimmed.isEmpty ? [fallbackFrame] : trimmed
+            self.frameIndex = max(0, self.frames.count - 1)
+ //           await MainActor.run {
+ //           print("Radar frames loaded:", frames.count) }
         } catch {
             errorText = "Couldn’t load radar tiles."
-        }
+        }        // remove this sometime
     }
 
     private func togglePlay() {
         if isPlaying {
             stopTick()
         } else {
+            didStartPlayback = false
             startTick()
         }
     }
@@ -126,11 +155,19 @@ struct RadarView: View {
         isPlaying = true
 
         tickTask = Task { @MainActor in
+            guard frames.count >= 2 else { return }
+
             while !Task.isCancelled {
-                // Step backward through time, loop
-                if frames.isEmpty { return }
+                // wait first so Play doesn’t instantly jump
+//                try? await Task.sleep(nanoseconds: 1_350_000_000)
+                try? await Task.sleep(nanoseconds: 1_350_000_000)
+                didStartPlayback = true
                 frameIndex = (frameIndex - 1 + frames.count) % frames.count
-                try? await Task.sleep(nanoseconds: 600_000_000) // 0.6s per frame
+
+                guard !Task.isCancelled else { return }
+                guard !frames.isEmpty else { return }
+
+                frameIndex = (frameIndex - 1 + frames.count) % frames.count
             }
         }
     }
