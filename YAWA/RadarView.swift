@@ -98,7 +98,7 @@ struct RadarView: View {
 //                await loadFrames()
 //            }
             .task {
-                print("RadarView instance:", instanceID)
+//                print("RadarView instance:", instanceID)
                 guard !didLoadFrames else { return }
                 didLoadFrames = true
                 await loadFrames()
@@ -115,7 +115,7 @@ struct RadarView: View {
         errorText = nil
         defer { isLoading = false }
 
-        print("loadFrames() CALLED", Date())
+//        print("loadFrames() CALLED", Date())
         
         do {
             let maps = try await service.fetchWeatherMaps()
@@ -134,8 +134,6 @@ struct RadarView: View {
 
             self.frames = trimmed.isEmpty ? [fallbackFrame] : trimmed
             self.frameIndex = max(0, self.frames.count - 1)
- //           await MainActor.run {
- //           print("Radar frames loaded:", frames.count) }
         } catch {
             errorText = "Couldn’t load radar tiles."
         }        // remove this sometime

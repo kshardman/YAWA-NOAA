@@ -1,12 +1,4 @@
 //
-//  RadarMapView 2.swift
-//  YAWA
-//
-//  Created by Keith Sharman on 1/15/26.
-//
-
-
-//
 //  RadarMapView.swift
 //  YAWA
 //
@@ -30,7 +22,7 @@ struct RadarMapView: UIViewRepresentable {
     let center: CLLocationCoordinate2D
     let initialRadiusMeters: CLLocationDistance
     let overlay: OverlayConfig
-    let animateTransition: Bool
+    let animateTransition: Bool   // ignored in this “static” build
 
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView(frame: .zero)
@@ -51,7 +43,7 @@ struct RadarMapView: UIViewRepresentable {
         // Metro-ish zoom cap
         map.setCameraZoomRange(
             MKMapView.CameraZoomRange(
-                minCenterCoordinateDistance: 40_000,
+                minCenterCoordinateDistance: 120_000,  // was 40_000
                 maxCenterCoordinateDistance: 1_500_000
             ),
             animated: false
@@ -63,41 +55,46 @@ struct RadarMapView: UIViewRepresentable {
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
-        // Only recenter when the selected location changes (prevents “jump” during playback/refresh)
         context.coordinator.recenterIfNeeded(map, center: center, radius: initialRadiusMeters)
 
-        // If only opacity changed, update renderer alpha without rebuilding overlays.
+        // Fast path: opacity only
         if context.coordinator.currentFrameKey == overlay.frameKey {
             context.coordinator.updateOpacity(on: map, opacity: overlay.opacity)
             return
         }
 
-        if animateTransition {
-            context.coordinator.prefetchThenFadeInOverlay(on: map, overlay: overlay)
-        } else {
-            context.coordinator.replaceOverlay(on: map, overlay: overlay)
-        }
+        // Static swap
+        context.coordinator.replaceOverlay(on: map, overlay: overlay)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator: NSObject, MKMapViewDelegate {
 
-        // Track identity of the currently displayed frame (host+path), NOT opacity
         var currentFrameKey: String?
-
-        // Keep last config so we can know current opacity, etc.
         var currentOverlayConfig: OverlayConfig?
 
-        private var activeOverlay: RainViewerCachingTileOverlay?
-        private var isTransitioning = false
+        private var activeOverlay: MKTileOverlay?
 
-        // Track alpha/renderer per overlay instance
         private var overlayAlpha: [ObjectIdentifier: CGFloat] = [:]
         private var overlayRenderer: [ObjectIdentifier: MKTileOverlayRenderer] = [:]
 
-        // Recentering protection
         private var lastCentered: CLLocationCoordinate2D?
+
+        // MARK: - MKMapViewDelegate
+
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let tile = overlay as? MKTileOverlay {
+                let renderer = MKTileOverlayRenderer(tileOverlay: tile)
+                let key = ObjectIdentifier(tile)
+                renderer.alpha = overlayAlpha[key] ?? 1.0
+                overlayRenderer[key] = renderer
+
+ //               print("✅ renderer created, alpha =", renderer.alpha)
+                return renderer
+            }
+            return MKOverlayRenderer(overlay: overlay)
+        }
 
         // MARK: - Camera
 
@@ -108,16 +105,16 @@ struct RadarMapView: UIViewRepresentable {
                 return
             }
             lastCentered = center
+
             let region = MKCoordinateRegion(center: center,
                                             latitudinalMeters: radius,
                                             longitudinalMeters: radius)
             map.setRegion(region, animated: false)
         }
 
-        // MARK: - Opacity (no overlay rebuild)
+        // MARK: - Opacity
 
         func updateOpacity(on map: MKMapView, opacity: Double) {
-            let a = CGFloat(opacity)
             currentOverlayConfig = OverlayConfig(
                 host: currentOverlayConfig?.host ?? "",
                 framePath: currentOverlayConfig?.framePath ?? "",
@@ -128,6 +125,7 @@ struct RadarMapView: UIViewRepresentable {
                   let renderer = overlayRenderer[ObjectIdentifier(activeOverlay)]
             else { return }
 
+            let a = CGFloat(opacity)
             overlayAlpha[ObjectIdentifier(activeOverlay)] = a
             renderer.alpha = a
             renderer.setNeedsDisplay()
@@ -136,6 +134,12 @@ struct RadarMapView: UIViewRepresentable {
         // MARK: - Overlay lifecycle
 
         func installInitialOverlay(on map: MKMapView, overlay: OverlayConfig) {
+            // If already installed with same frame, just update opacity
+            if currentFrameKey == overlay.frameKey {
+                updateOpacity(on: map, opacity: overlay.opacity)
+                return
+            }
+
             let tile = makeTileOverlay(from: overlay)
             activeOverlay = tile
             currentOverlayConfig = overlay
@@ -143,13 +147,15 @@ struct RadarMapView: UIViewRepresentable {
 
             overlayAlpha[ObjectIdentifier(tile)] = CGFloat(overlay.opacity)
 
+ //           print("✅ tile class:", String(describing: type(of: tile)))
+//            print("✅ installInitialOverlay frameKey:", overlay.frameKey, "opacity:", overlay.opacity)
+
             UIView.performWithoutAnimation {
                 map.addOverlay(tile, level: .aboveLabels)
             }
         }
 
         func replaceOverlay(on map: MKMapView, overlay: OverlayConfig) {
-            // Avoid redundant work
             if currentFrameKey == overlay.frameKey {
                 updateOpacity(on: map, opacity: overlay.opacity)
                 return
@@ -168,103 +174,17 @@ struct RadarMapView: UIViewRepresentable {
             installInitialOverlay(on: map, overlay: overlay)
         }
 
-        /// Apple-ish: keep old visible, add new at alpha 0, then fade in when first tile arrives.
-        func prefetchThenFadeInOverlay(on map: MKMapView, overlay: OverlayConfig) {
-            guard !isTransitioning else { return }
-
-            // If only opacity changed, don't transition at all.
-            if currentFrameKey == overlay.frameKey {
-                updateOpacity(on: map, opacity: overlay.opacity)
-                return
-            }
-
-            isTransitioning = true
-
-            guard let old = activeOverlay else {
-                replaceOverlay(on: map, overlay: overlay)
-                isTransitioning = false
-                return
-            }
-
-            let new = makeTileOverlay(from: overlay)
-            currentOverlayConfig = overlay
-            currentFrameKey = overlay.frameKey
-
-            // Start new invisible so it can load tiles while old stays visible.
-            overlayAlpha[ObjectIdentifier(new)] = 0
-
-            UIView.performWithoutAnimation {
-                map.addOverlay(new, level: .aboveLabels)
-            }
-
-            let targetAlpha = CGFloat(overlay.opacity)
-            var didFade = false
-
-            func fadeNow() {
-                guard !didFade else { return }
-                didFade = true
-
-                guard let newRenderer = self.overlayRenderer[ObjectIdentifier(new)] else {
-                    self.replaceOverlay(on: map, overlay: overlay)
-                    self.isTransitioning = false
-                    return
-                }
-
-                UIView.animate(withDuration: 0.5, delay: 0, options: [.curveEaseInOut]) {  // ← Increased for smoother feel
-                    newRenderer.alpha = targetAlpha
-                    newRenderer.setNeedsDisplay()
-                } completion: { _ in
-                    UIView.performWithoutAnimation {
-                        map.removeOverlay(old)
-                    }
-
-                    self.overlayAlpha.removeValue(forKey: ObjectIdentifier(old))
-                    self.overlayRenderer.removeValue(forKey: ObjectIdentifier(old))
-
-                    self.activeOverlay = new
-                    self.isTransitioning = false
-                }
-            }
-
-            // Fade as soon as ANY tile arrives
-            new.didLoadFirstTile = {
-                DispatchQueue.main.async { fadeNow() }
-            }
-
-            // Safety timeout (increased slightly)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                fadeNow()
-            }
-        }
-
         // MARK: - Overlay factory
 
-        private func makeTileOverlay(from overlay: OverlayConfig) -> RainViewerCachingTileOverlay {
+        private func makeTileOverlay(from overlay: OverlayConfig) -> MKTileOverlay {
             RainViewerCachingTileOverlay(
                 host: overlay.host,
                 framePath: overlay.framePath,
                 colorScheme: 2,
                 smooth: true,
                 snow: false,
-                size: .s512,          // ← Default to 512 for better perf
                 maxZoom: 7
             )
-        }
-
-        // MARK: - MKMapViewDelegate
-
-        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let tile = overlay as? MKTileOverlay {
-                let renderer = MKTileOverlayRenderer(tileOverlay: tile)
-
-                let key = ObjectIdentifier(tile)
-                let a = overlayAlpha[key] ?? 0.0
-                renderer.alpha = a
-
-                overlayRenderer[key] = renderer
-                return renderer
-            }
-            return MKOverlayRenderer(overlay: overlay)
         }
     }
 }
