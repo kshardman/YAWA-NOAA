@@ -10,8 +10,11 @@ import UIKit
 import UserNotifications
 
 struct SettingsView: View {
-    @State private var stationID: String = "—"
-    @State private var apiKey: String = "—"
+    @AppStorage("pwsStationID") private var stationID: String = ""
+    @AppStorage("pwsApiKey") private var apiKey: String = ""
+
+    // One-time defaults from bundled config.plist (optional)
+    @State private var loadedDefaults = false
     @State private var showKey = false
     @State private var copied = false
 
@@ -67,9 +70,22 @@ struct SettingsView: View {
             .task {
                 await notifications.refreshAuthorizationStatus()
 
-                // Load from config.plist in app bundle
-                stationID = (try? configValue("stationID")) ?? "—"
-                apiKey = (try? configValue("WU_API_KEY")) ?? "—"
+                // Seed defaults from config.plist only if user hasn't entered anything yet
+                if !loadedDefaults {
+                    loadedDefaults = true
+
+                    if stationID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if let v = try? configValue("stationID") {
+                            stationID = v
+                        }
+                    }
+
+                    if apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if let v = try? configValue("WU_API_KEY") {
+                            apiKey = v
+                        }
+                    }
+                }
             }
         }
     }
@@ -144,19 +160,35 @@ private extension SettingsView {
             // ✅ Only show PWS details when PWS is selected
             if source == .pws {
                 LabeledContent("Station") {
-                    Text(stationID)
+                    TextField("Enter station ID", text: $stationID)
                         .font(.body.weight(.semibold))
                         .monospaced()
                         .foregroundStyle(YAWATheme.textPrimary)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .keyboardType(.asciiCapable)
+                        .textContentType(.none)
+                        .multilineTextAlignment(.trailing)
                 }
 
                 LabeledContent("API Key") {
-                    Text(showKey ? apiKey : masked(apiKey))
-                        .font(.body.weight(.semibold))
-                        .monospaced()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .foregroundStyle(YAWATheme.textPrimary)
+                    Group {
+                        if showKey {
+                            TextField("Enter API key", text: $apiKey)
+                        } else {
+                            SecureField("Enter API key", text: $apiKey)
+                        }
+                    }
+                    .font(.body.weight(.semibold))
+                    .monospaced()
+                    .foregroundStyle(YAWATheme.textPrimary)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .keyboardType(.asciiCapable)
+                    .textContentType(.none)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 }
 
                 HStack(spacing: 12) {
@@ -171,7 +203,7 @@ private extension SettingsView {
                             copied = false
                         }
                     }
-                    .disabled(apiKey == "—" || apiKey.isEmpty)
+                    .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 .buttonStyle(.bordered)
                 .tint(YAWATheme.accent)
@@ -242,9 +274,7 @@ private extension SettingsView {
 
     func masked(_ key: String) -> String {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count > 8 else { return "••••••••" }
-        let suffix = String(trimmed.suffix(6))
-        return "••••••••••\(suffix)"
+        return trimmed.isEmpty ? "—" : "••••••••••••"
     }
 
     func configValue(_ key: String) throws -> String {

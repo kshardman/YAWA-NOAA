@@ -43,8 +43,8 @@ struct RadarMapView: UIViewRepresentable {
         // Metro-ish zoom cap
         map.setCameraZoomRange(
             MKMapView.CameraZoomRange(
-                minCenterCoordinateDistance: 120_000,  // was 40_000
-                maxCenterCoordinateDistance: 1_500_000
+                minCenterCoordinateDistance: 60_000,  // was 40_000
+                maxCenterCoordinateDistance: 7_500_000
             ),
             animated: false
         )
