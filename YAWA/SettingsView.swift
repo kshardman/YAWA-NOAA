@@ -12,11 +12,15 @@ import UserNotifications
 struct SettingsView: View {
     @AppStorage("pwsStationID") private var stationID: String = ""
     @AppStorage("pwsApiKey") private var apiKey: String = ""
+    
+    @AppStorage("weatherApiKey") private var weatherApiKey: String = ""
 
     // One-time defaults from bundled config.plist (optional)
     @State private var loadedDefaults = false
     @State private var showKey = false
     @State private var copied = false
+    @State private var showWeatherApiKey = false
+    @State private var copiedWeatherApiKey = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -83,6 +87,12 @@ struct SettingsView: View {
                     if apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         if let v = try? configValue("WU_API_KEY") {
                             apiKey = v
+                        }
+                    }
+
+                    if weatherApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if let v = try? configValue("WEATHERAPI_KEY") {
+                            weatherApiKey = v
                         }
                     }
                 }
@@ -204,6 +214,44 @@ private extension SettingsView {
                         }
                     }
                     .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .buttonStyle(.bordered)
+                .tint(YAWATheme.accent)
+
+
+                LabeledContent("WeatherAPI Key") {
+                    Group {
+                        if showWeatherApiKey {
+                            TextField("Enter WeatherAPI key", text: $weatherApiKey)
+                        } else {
+                            SecureField("Enter WeatherAPI key", text: $weatherApiKey)
+                        }
+                    }
+                    .font(.body.weight(.semibold))
+                    .monospaced()
+                    .foregroundStyle(YAWATheme.textPrimary)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .keyboardType(.asciiCapable)
+                    .textContentType(.none)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                }
+
+                HStack(spacing: 12) {
+                    Button(showWeatherApiKey ? "Hide Key" : "Reveal Key") {
+                        showWeatherApiKey.toggle()
+                    }
+
+                    Button(copiedWeatherApiKey ? "Copied" : "Copy Key") {
+                        UIPasteboard.general.string = weatherApiKey
+                        copiedWeatherApiKey = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                            copiedWeatherApiKey = false
+                        }
+                    }
+                    .disabled(weatherApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 .buttonStyle(.bordered)
                 .tint(YAWATheme.accent)

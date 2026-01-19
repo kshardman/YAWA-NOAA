@@ -485,6 +485,231 @@ final class ForecastViewModel: ObservableObject {
     }
 }
 
+// MARK: - WeatherAPI.com 3-day Forecast
+
+struct WeatherAPIForecastResponse: Decodable {
+    struct Forecast: Decodable {
+        let forecastday: [ForecastDay]
+    }
+
+    struct ForecastDay: Decodable, Identifiable {
+        var id: String { date }
+
+        let date: String               // "yyyy-MM-dd"
+        let day: Day
+
+        struct Day: Decodable {
+            let maxtemp_f: Double
+            let mintemp_f: Double
+            let daily_chance_of_rain: Int?
+            let condition: Condition
+
+            struct Condition: Decodable {
+                let text: String
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case maxtemp_f, mintemp_f, daily_chance_of_rain, condition
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                maxtemp_f = try c.decode(Double.self, forKey: .maxtemp_f)
+                mintemp_f = try c.decode(Double.self, forKey: .mintemp_f)
+                condition = try c.decode(Condition.self, forKey: .condition)
+
+                // WeatherAPI may return this as either a string or a number depending on plan/endpoint.
+                if let i = try? c.decode(Int.self, forKey: .daily_chance_of_rain) {
+                    daily_chance_of_rain = i
+                } else if let s = try? c.decode(String.self, forKey: .daily_chance_of_rain), let i = Int(s) {
+                    daily_chance_of_rain = i
+                } else {
+                    daily_chance_of_rain = nil
+                }
+            }
+        }
+    }
+
+    let forecast: Forecast
+}
+
+enum WeatherAPIServiceError: Error {
+    case missingKey
+    case invalidURL
+    case badStatus(Int)
+}
+
+final class WeatherAPIService {
+    private let session: URLSession
+
+    init() {
+        let cfg = URLSessionConfiguration.default
+        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+        cfg.timeoutIntervalForRequest = 20
+        self.session = URLSession(configuration: cfg)
+    }
+
+    func fetchForecast(lat: Double, lon: Double, apiKey: String) async throws -> [WeatherAPIForecastResponse.ForecastDay] {
+        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw WeatherAPIServiceError.missingKey }
+
+        var comps = URLComponents()
+        comps.scheme = "https"
+        comps.host = "api.weatherapi.com"
+        comps.path = "/v1/forecast.json"
+        comps.queryItems = [
+            URLQueryItem(name: "key", value: trimmed),
+            URLQueryItem(name: "q", value: "\(lat),\(lon)"),
+            URLQueryItem(name: "days", value: "7"),
+//            URLQueryItem(name: "days", value: "\(days)"),
+            URLQueryItem(name: "aqi", value: "no"),
+            URLQueryItem(name: "alerts", value: "no")
+        ]
+
+        guard let url = comps.url else { throw WeatherAPIServiceError.invalidURL }
+
+        var req = URLRequest(url: url)
+        req.setValue("Yawa NOAA (personal app)", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw WeatherAPIServiceError.badStatus(http.statusCode)
+        }
+
+        let decoded = try JSONDecoder().decode(WeatherAPIForecastResponse.self, from: data)
+        return decoded.forecast.forecastday
+    }
+}
+
+@MainActor
+final class WeatherAPIForecastViewModel: ObservableObject {
+    struct DayRow: Identifiable, Equatable {
+        let id: String                 // "yyyy-MM-dd"
+        let weekday: String            // "Sun"
+        let dateText: String           // "1/18"
+        let conditionText: String
+        let hiF: Int
+        let loF: Int
+        let chanceRain: Int?
+    }
+
+    @Published var days: [DayRow] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+
+    private let service = WeatherAPIService()
+    private var lastCoord: CLLocationCoordinate2D?
+
+    private let weekdayFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.locale = .current
+        df.dateFormat = "EEE"
+        return df
+    }()
+
+    
+    private let shortDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.locale = .current
+        df.dateFormat = "M/d"
+        return df
+    }()
+    
+    private let dateParser: DateFormatter = {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "yyyy-MM-dd"
+        return df
+    }()
+
+    func loadIfNeeded(for coord: CLLocationCoordinate2D) async {
+        if let last = lastCoord,
+           abs(last.latitude - coord.latitude) < 0.01,
+           abs(last.longitude - coord.longitude) < 0.01,
+           !days.isEmpty {
+            return
+        }
+
+        lastCoord = coord
+        await refresh(for: coord)
+    }
+
+    func refresh(for coord: CLLocationCoordinate2D) async {
+        isLoading = true
+        defer { isLoading = false }
+
+        let key = (UserDefaults.standard.string(forKey: "weatherApiKey") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !key.isEmpty else {
+            days = []
+            errorMessage = "Enter a WeatherAPI key in Settings to enable forecast."
+            return
+        }
+
+        do {
+            let forecastDays = try await service.fetchForecast(lat: coord.latitude, lon: coord.longitude, apiKey: key)
+
+            days = forecastDays.map { fd in
+                let date = fd.date
+
+                let weekday: String
+                let dateText: String
+                if let parsed = dateParser.date(from: date) {
+                    weekday = weekdayFormatter.string(from: parsed)
+                    dateText = shortDateFormatter.string(from: parsed)
+                } else {
+                    weekday = date
+                    dateText = ""
+                }
+
+                let hi = Int(fd.day.maxtemp_f.rounded())
+                let lo = Int(fd.day.mintemp_f.rounded())
+                let chance: Int? = fd.day.daily_chance_of_rain
+
+                return DayRow(
+                    id: date,
+                    weekday: weekday,
+                    dateText: dateText,
+                    conditionText: fd.day.condition.text,
+                    hiF: hi,
+                    loF: lo,
+                    chanceRain: chance
+                )
+            }
+
+            errorMessage = nil
+        } catch {
+            if error is CancellationError { return }
+            if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
+
+            days = []
+
+            if let svc = error as? WeatherAPIServiceError {
+                switch svc {
+                case .missingKey:
+                    errorMessage = "Enter a WeatherAPI key in Settings to enable forecast."
+                case .invalidURL:
+                    errorMessage = "Forecast configuration error."
+                case .badStatus(let code):
+                    if code == 401 || code == 403 {
+                        errorMessage = "WeatherAPI rejected the key (HTTP \(code)). Check your key in Settings."
+                    } else if code == 429 {
+                        errorMessage = "WeatherAPI rate limit hit (HTTP 429). Try again later."
+                    } else {
+                        errorMessage = "WeatherAPI request failed (HTTP \(code))."
+                    }
+                }
+                return
+            }
+
+            // Fallback
+            errorMessage = "Forecast unavailable at this time."
+        }
+    }
+}
+
 // MARK: - View
 
 func conditionsSymbolAndColor(

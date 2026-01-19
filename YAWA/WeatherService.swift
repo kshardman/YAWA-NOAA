@@ -15,6 +15,7 @@ struct WeatherService {
         case invalidURL
         case httpStatus(Int)
         case noObservations
+        case missingPWSCredentials
     }
 
     struct WeatherResponse: Decodable { let observations: [Observation] }
@@ -30,6 +31,8 @@ struct WeatherService {
         let winddir: Double
         let humidity: Double
         let imperial: Imperial
+        let lat: Double?
+        let lon: Double?
     }
 
     struct Snapshot: Codable {
@@ -47,11 +50,44 @@ struct WeatherService {
     // MARK: - Public API
 
     func fetchCurrent() async throws -> Snapshot {
-        let apiKey = try configValue("WU_API_KEY")
-        let stationID = try configValue("stationID")
+        // Prefer user-entered values from Settings (AppStorage), fall back to bundled config.plist
+        let defaults = UserDefaults.standard
+        let storedStation = (defaults.string(forKey: "pwsStationID") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let storedKey = (defaults.string(forKey: "pwsApiKey") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let urlString = "https://api.weather.com/v2/pws/observations/current?stationId=\(stationID)&format=json&units=e&apiKey=\(apiKey)"
-        guard let url = URL(string: urlString) else { throw ServiceError.invalidURL }
+        let stationID: String
+        let apiKey: String
+
+        if !storedStation.isEmpty && !storedKey.isEmpty {
+            stationID = storedStation
+            apiKey = storedKey
+        } else {
+            // Fallback to bundled config.plist for backwards compatibility
+            let cfgStation = (try? configValue("stationID"))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let cfgKey = (try? configValue("WU_API_KEY"))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            guard !cfgStation.isEmpty, !cfgKey.isEmpty else {
+                throw ServiceError.missingPWSCredentials
+            }
+
+            stationID = cfgStation
+            apiKey = cfgKey
+        }
+
+        var comps = URLComponents()
+        comps.scheme = "https"
+        comps.host = "api.weather.com"
+        comps.path = "/v2/pws/observations/current"
+        comps.queryItems = [
+            URLQueryItem(name: "stationId", value: stationID),
+            URLQueryItem(name: "format", value: "json"),
+            URLQueryItem(name: "units", value: "e"),
+            URLQueryItem(name: "apiKey", value: apiKey)
+        ]
+
+        guard let url = comps.url else { throw ServiceError.invalidURL }
 
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -67,6 +103,12 @@ struct WeatherService {
 
         let decoded = try JSONDecoder().decode(WeatherResponse.self, from: data)
         guard let obs = decoded.observations.first else { throw ServiceError.noObservations }
+
+        // Persist PWS station coordinate (if present) so PWS-mode forecast can anchor to the station
+        if let lat = obs.lat, let lon = obs.lon {
+            defaults.set(lat, forKey: "pwsStationLat")
+            defaults.set(lon, forKey: "pwsStationLon")
+        }
 
         let windDeg = Int(obs.winddir)
         let windText = compassDirection(from: windDeg)

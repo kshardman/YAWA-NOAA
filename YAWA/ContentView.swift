@@ -55,12 +55,13 @@ struct RadarTarget: Identifiable, Equatable {
 struct ContentView: View {
     @StateObject private var networkMonitor = NetworkMonitor()
     @StateObject private var viewModel = WeatherViewModel()
-    @StateObject private var location = LocationManager()
-
+    @StateObject private var locationManager = LocationManager()
     @StateObject private var searchVM = CitySearchViewModel()
-    
-    // Forecast VM for inline daily forecast list
     @StateObject private var forecastVM = ForecastViewModel()
+    @StateObject private var weatherApiForecastViewModel = WeatherAPIForecastViewModel()
+    
+    
+    @StateObject private var location = LocationManager()
     
     @State private var lastCurrentRefreshAt: Date? = nil
     @State private var lastForecastRefreshAt: Date? = nil
@@ -81,8 +82,33 @@ struct ContentView: View {
  //   @State private var showingRadar = false
     @State private var radarTarget: RadarTarget?
     
-    @StateObject private var locationManager = LocationManager()
 
+    private var weatherApiCoordKey: String {
+        guard let c = weatherApiTargetCoordinate else { return "" }
+        let lat = (c.latitude * 100).rounded() / 100
+        let lon = (c.longitude * 100).rounded() / 100
+        return "\(lat),\(lon)"
+    }
+    
+    private var pwsStationCoordinate: CLLocationCoordinate2D? {
+        let d = UserDefaults.standard
+        guard d.object(forKey: "pwsStationLat") != nil,
+              d.object(forKey: "pwsStationLon") != nil else { return nil }
+
+        let lat = d.double(forKey: "pwsStationLat")
+        let lon = d.double(forKey: "pwsStationLon")
+        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
+
+    private var weatherApiTargetCoordinate: CLLocationCoordinate2D? {
+        // In PWS mode, forecast should be for the station
+        if source == .pws {
+            return pwsStationCoordinate
+        }
+        // Otherwise follow the device coordinate (your existing behavior)
+        return locationManager.coordinate
+    }
+    
     // nil = “use GPS”; non-nil = user selected a city/favorite
     @State private var selectedCity: CitySearchViewModel.Result?
     
@@ -110,7 +136,7 @@ struct ContentView: View {
         return nil
     }
     
-    
+    let sideCol: CGFloat = 120 // tweak 110–140 to taste
 
     private enum DetailBody {
         case text(String)
@@ -211,7 +237,7 @@ struct ContentView: View {
 
     private var headerLocationText: String {
         if source == .pws { return "" } // don’t show stale NOAA location in PWS mode
-        return selection.selectedFavorite?.displayName ?? (location.locationName ?? "Current Location")
+        return selection.selectedFavorite?.displayName ?? (locationManager.locationName ?? "Current Location")
     }
 
     private var showCurrentLocationGlyph: Bool {
@@ -244,10 +270,10 @@ struct ContentView: View {
         }
 
         // Current location mode: ask for a fresh location fix first
-        location.request()
+        locationManager.request()
 
         let shouldByAge = isStale(lastCurrentRefreshAt, maxAge: refreshMaxAge)
-        let shouldByMove = movedEnough(from: lastRefreshCoord, to: location.coordinate)
+        let shouldByMove = movedEnough(from: lastRefreshCoord, to: locationManager.coordinate)
 
         guard shouldByAge || shouldByMove else { return }
 
@@ -260,7 +286,7 @@ struct ContentView: View {
 
         lastCurrentRefreshAt = Date()
         lastForecastRefreshAt = Date()
-        lastRefreshCoord = location.coordinate
+        lastRefreshCoord = locationManager.coordinate
     }
     
     
@@ -298,7 +324,110 @@ struct ContentView: View {
                     }
 
                 } else {
-                    // In PWS mode there’s no forecast — push content up nicely
+                    Text("Daily Forecast")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(YAWATheme.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                    // Placeholder for WeatherAPI.com daily forecast (to be wired next)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "calendar")
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(YAWATheme.textSecondary)
+
+                            Text("Station Forecast (WeatherAPI)")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(YAWATheme.textPrimary)
+
+                            Spacer()
+                        }
+
+                        if weatherApiForecastViewModel.isLoading {
+                            ProgressView()
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        } else if let err = weatherApiForecastViewModel.errorMessage {
+                            Text(err)
+                                .font(.subheadline)
+                                .foregroundStyle(YAWATheme.textSecondary)
+                        } else if weatherApiForecastViewModel.days.isEmpty {
+                            Text("No forecast data.")
+                                .font(.subheadline)
+                                .foregroundStyle(YAWATheme.textSecondary)
+                        } else {
+                            VStack(spacing: 10) {
+                                ForEach(Array(weatherApiForecastViewModel.days.enumerated()), id: \.element.id) { index, d in
+                                    let (sym, color) = conditionsSymbolAndColor(for: d.conditionText, isNight: false)
+                                    let popText = d.chanceRain.map { "\($0)%" }
+
+                                    HStack(spacing: 10) {
+                                        // Left column (fixed)
+                                        HStack(spacing: 4) {
+                                            Text(d.weekday)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(YAWATheme.textPrimary)
+
+                                            Text(d.dateText)
+                                                .font(.caption)
+                                                .foregroundStyle(YAWATheme.textSecondary)
+                                        }
+                                        .frame(width: sideCol, alignment: .leading)
+
+                                        // Middle column (true center)
+                                        VStack(spacing: 2) {
+                                            Image(systemName: sym)
+                                                .symbolRenderingMode(.hierarchical)
+                                                .foregroundStyle(color)
+                                                .font(.title3)
+
+                                            Group {
+                                                if let popText {
+                                                    Text(popText)
+                                                } else {
+                                                    Text("00%").hidden() // keeps identical layout/baseline
+                                                }
+                                            }
+                                            .font(.caption2.weight(.semibold))
+                                            .monospacedDigit()
+                                            .foregroundStyle(YAWATheme.textSecondary)
+                                        }
+                                        .frame(height: 34, alignment: .center)
+                                        .frame(maxWidth: .infinity, alignment: .center)
+
+                                        // Right column (fixed)
+                                        Text("H \(d.hiF)°  L \(d.loF)°")
+                                            .font(.subheadline.weight(.semibold))
+                                            .monospacedDigit()
+                                            .foregroundStyle(YAWATheme.textPrimary)
+                                            .frame(width: sideCol, alignment: .trailing)
+                                    }
+
+                                    if index < weatherApiForecastViewModel.days.count - 1 {
+                                        Divider().opacity(0.5)
+                                    }
+                                }
+                            }
+                        }
+                        if source == .pws {
+                            Divider()
+                                .opacity(0.25)
+                                .padding(.top, 6)
+
+                            Text("WeatherAPI rain chance may differ from NOAA PoP.")
+                                .font(.caption)
+                                .foregroundStyle(YAWATheme.textTertiary)
+                                .multilineTextAlignment(.leading)
+                                .padding(.top, 4)
+                        }
+                    }
+                    .padding(14)
+                    .background(YAWATheme.card)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .task(id: weatherApiCoordKey) {
+                        guard let coord = weatherApiTargetCoordinate else { return }
+                        await weatherApiForecastViewModel.loadIfNeeded(for: coord)
+                    }
+                    
                     Spacer(minLength: 0)
                 }
             }
@@ -337,7 +466,7 @@ struct ContentView: View {
         .task {
             // 🔔 Ask for notification permission once on launch
             await NotificationService.shared.requestAuthorizationIfNeeded()
-            location.request()
+            locationManager.request()
 
             // immediate refresh on launch
             viewModel.setLoadingPlaceholders()
@@ -347,10 +476,10 @@ struct ContentView: View {
             await refreshNow()
             if source == .noaa { await refreshForecastNow() }
 
-            recordRefresh(coord: location.coordinate)
+            recordRefresh(coord: locationManager.coordinate)
         }
         
-        .onReceive(location.$coordinate) { coord in
+        .onReceive(locationManager.$coordinate) { coord in
             guard let coord else { return }
             guard selection.selectedFavorite == nil else { return }
             guard source != .pws else { return }
@@ -380,7 +509,7 @@ struct ContentView: View {
             guard selection.selectedFavorite == nil else { return } // favorites handled elsewhere
 
             pendingForegroundRefresh = true
-            location.refresh()   // one-shot location request
+            locationManager.refresh()   // one-shot location request
         }
         .onChange(of: selection.selectedFavorite?.id) { _, _ in
             // favorite/current location changed — refresh immediately
@@ -737,7 +866,7 @@ struct ContentView: View {
             // Forecast rows
             if !forecastVM.periods.isEmpty {
 
-                let sideCol: CGFloat = 120 // tweak 110–140 to taste
+//                let sideCol: CGFloat = 120 // tweak 110–140 to taste
                 let forecastDays: [DailyForecast] =
                     Array(combineDayNight(Array(forecastVM.periods.prefix(14))).prefix(7))
 
@@ -752,13 +881,13 @@ struct ContentView: View {
                     HStack(spacing: 10) {
 
                         // Left column (fixed)
-                        HStack(spacing: 6) {
+                        HStack(spacing: 4) {
                             Text(weekdayLabel(d.startDate))
-                                .font(.headline)
+                                .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(YAWATheme.textPrimary)
 
                             Text(d.dateText)
-                                .font(.subheadline)
+                                .font(.caption) // tighter than .subheadline
                                 .foregroundStyle(YAWATheme.textSecondary)
                         }
                         .frame(width: sideCol, alignment: .leading)
@@ -770,7 +899,7 @@ struct ContentView: View {
                             Image(systemName: sym.symbol)
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(sym.color)
-                                .font(.title2)
+                                .font(.title3)
                                 .offset(y: iconYOffset(symbol: sym.symbol, hasPop: pop != nil))
 
                             Group {
@@ -784,16 +913,17 @@ struct ContentView: View {
                             .monospacedDigit()
                             .foregroundStyle(YAWATheme.textSecondary)
                         }
-                        .frame(height: 44, alignment: .center)          // ✅ locks vertical centering
+                        .frame(height: 34, alignment: .center)          // ✅ locks vertical centering
                         .frame(maxWidth: .infinity, alignment: .center) // keeps true center column
                         
                         // Right column (fixed)
                         Text("H \(d.highText)  L \(d.lowText)")
-                            .font(.headline)
+                            .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
                             .foregroundStyle(YAWATheme.textPrimary)
                             .frame(width: sideCol, alignment: .trailing)
                     }
+ //                   .padding(.vertical, 6)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         let dayText = (d.day.detailedForecast ?? d.day.shortForecast)
@@ -824,8 +954,9 @@ struct ContentView: View {
 
                     // If you want dividers between rows, add them here:
                     if d.id != forecastDays.last?.id {
-                            Divider()
-                                .overlay(YAWATheme.divider)   // <— use your theme divider opacity
+                        Divider()
+                            .opacity(0.5)
+ //                           .overlay(YAWATheme.divider)   // <— use your theme divider opacity
                         }
                 }
 
@@ -843,8 +974,8 @@ struct ContentView: View {
 
         if let fav: FavoriteLocation = selection.selectedFavorite {
             newTarget = RadarTarget(latitude: fav.latitude, longitude: fav.longitude, title: fav.displayName)
-        } else if let coord = location.coordinate {
-            newTarget = RadarTarget(latitude: coord.latitude, longitude: coord.longitude, title: location.locationName ?? "Current Location")
+        } else if let coord = locationManager.coordinate {
+            newTarget = RadarTarget(latitude: coord.latitude, longitude: coord.longitude, title: locationManager.locationName ?? "Current Location")
         } else {
             newTarget = RadarTarget(latitude: 0, longitude: 0, title: "Location unavailable")
         }
@@ -951,7 +1082,7 @@ struct ContentView: View {
             // LocationManager's reverse geocode owns the header label, preventing stale “snap back”.
             await viewModel.refreshCurrentConditions(
                 source: source,
-                coord: location.coordinate,
+                coord: locationManager.coordinate,
                 locationName: nil
             )
         }
@@ -965,7 +1096,7 @@ struct ContentView: View {
             return
         }
 
-        guard let coord = location.coordinate else { return }
+        guard let coord = locationManager.coordinate else { return }
 
         // ✅ when returning to GPS, force refresh (not loadIfNeeded)
         await forecastVM.refresh(for: coord)
