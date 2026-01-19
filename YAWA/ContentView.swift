@@ -694,6 +694,26 @@ struct ContentView: View {
 
             if viewModel.isStale {
                 pill("STALE", "clock.badge.exclamationmark")
+                    .contentShape(Capsule())
+                    .onTapGesture {
+                        Task {
+                            isManualRefreshing = true
+                            defer { isManualRefreshing = false }
+
+                            await refreshNow()
+                            if source == .noaa { await refreshForecastNow() }
+
+                            successHaptic()
+                        }
+                    }
+                    .opacity(0.95)
+                    .overlay(
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(YAWATheme.textSecondary.opacity(0.8))
+                            .padding(.trailing, 10),
+                        alignment: .trailing
+                    )
             }
         }
     }
