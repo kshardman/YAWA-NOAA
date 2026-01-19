@@ -401,6 +401,13 @@ struct ContentView: View {
                                             .foregroundStyle(YAWATheme.textPrimary)
                                             .frame(width: sideCol, alignment: .trailing)
                                     }
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        selectedDetail = DetailPayload(
+                                            title: "\(d.weekday) \(d.dateText)",
+                                            body: d.detailText
+                                        )
+                                    }
 
                                     if index < weatherApiForecastViewModel.days.count - 1 {
                                         Divider().opacity(0.5)
@@ -548,17 +555,6 @@ struct ContentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Yawa NOAA Weather")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(YAWATheme.textSecondary)
-                    .opacity(0.85)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .onLongPressGesture(minimumDuration: 1.0) {
-                        triggerEasterEgg()
-                    }
-            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 ToolbarIconButton("star.circle.fill", tint: .white) { showingLocations = true }
                 ToolbarIconButton("gearshape.fill", tint: .white) { showingSettings = true }

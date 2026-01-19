@@ -585,13 +585,14 @@ final class WeatherAPIService {
 @MainActor
 final class WeatherAPIForecastViewModel: ObservableObject {
     struct DayRow: Identifiable, Equatable {
-        let id: String                 // "yyyy-MM-dd"
-        let weekday: String            // "Sun"
-        let dateText: String           // "1/18"
+        let id: String
+        let weekday: String
+        let dateText: String
         let conditionText: String
         let hiF: Int
         let loF: Int
         let chanceRain: Int?
+        let detailText: String   // ✅ add
     }
 
     @Published var days: [DayRow] = []
@@ -667,15 +668,22 @@ final class WeatherAPIForecastViewModel: ObservableObject {
                 let hi = Int(fd.day.maxtemp_f.rounded())
                 let lo = Int(fd.day.mintemp_f.rounded())
                 let chance: Int? = fd.day.daily_chance_of_rain
+                    .map { Int((Double($0) / 10.0).rounded() * 10) }
+                    .flatMap { $0 == 0 ? nil : $0 }
+                
+                let cond = fd.day.condition.text
+                let popLine = chance.map { "Chance of rain: \($0)%." } ?? ""
+                let detail = "\(cond). High \(hi)°, low \(lo)°. \(popLine)".trimmingCharacters(in: .whitespaces)
 
                 return DayRow(
                     id: date,
                     weekday: weekday,
                     dateText: dateText,
-                    conditionText: fd.day.condition.text,
+                    conditionText: cond,
                     hiF: hi,
                     loF: lo,
-                    chanceRain: chance
+                    chanceRain: chance,
+                    detailText: detail
                 )
             }
 
