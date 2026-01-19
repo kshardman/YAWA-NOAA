@@ -40,6 +40,10 @@ struct RadarMapView: UIViewRepresentable {
         )
         map.setRegion(region, animated: false)
 
+        // Add a single "target" pin to mark the center coordinate
+        context.coordinator.installTargetPinIfNeeded(on: map)
+        context.coordinator.updateTargetPin(center)
+
         // Metro-ish zoom cap
         map.setCameraZoomRange(
             MKMapView.CameraZoomRange(
@@ -55,6 +59,8 @@ struct RadarMapView: UIViewRepresentable {
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
+        context.coordinator.installTargetPinIfNeeded(on: map)
+        context.coordinator.updateTargetPin(center)
         context.coordinator.recenterIfNeeded(map, center: center, radius: initialRadiusMeters)
 
         // Fast path: opacity only
@@ -81,19 +87,44 @@ struct RadarMapView: UIViewRepresentable {
 
         private var lastCentered: CLLocationCoordinate2D?
 
-        // MARK: - MKMapViewDelegate
+        // MARK: - Target pin (marks the map center)
+        private let targetPin = MKPointAnnotation()
+        private var isTargetPinInstalled = false
 
-        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let tile = overlay as? MKTileOverlay {
-                let renderer = MKTileOverlayRenderer(tileOverlay: tile)
-                let key = ObjectIdentifier(tile)
-                renderer.alpha = overlayAlpha[key] ?? 1.0
-                overlayRenderer[key] = renderer
+        // MARK: - Target pin helpers
 
- //               print("✅ renderer created, alpha =", renderer.alpha)
-                return renderer
-            }
-            return MKOverlayRenderer(overlay: overlay)
+        func installTargetPinIfNeeded(on map: MKMapView) {
+            guard !isTargetPinInstalled else { return }
+            isTargetPinInstalled = true
+            targetPin.title = nil
+            map.addAnnotation(targetPin)
+        }
+
+        func updateTargetPin(_ center: CLLocationCoordinate2D) {
+            targetPin.coordinate = center
+        }
+
+        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if annotation is MKUserLocation { return nil }
+
+            let id = "targetCrosshair"
+            let v = mapView.dequeueReusableAnnotationView(withIdentifier: id)
+                ?? MKAnnotationView(annotation: annotation, reuseIdentifier: id)
+            
+            v.annotation = annotation
+            v.canShowCallout = false
+
+            // Crosshair/dot style (subtle, non-marker)
+            let img = UIImage(systemName: "scope")
+                ?? UIImage(systemName: "dot.circle")
+
+            v.image = img
+            v.tintColor = UIColor.secondaryLabel
+
+            // Keep it centered exactly on the coordinate
+            v.centerOffset = .zero
+
+            return v
         }
 
         // MARK: - Camera
@@ -105,6 +136,8 @@ struct RadarMapView: UIViewRepresentable {
                 return
             }
             lastCentered = center
+
+            updateTargetPin(center)
 
             let region = MKCoordinateRegion(center: center,
                                             latitudinalMeters: radius,
