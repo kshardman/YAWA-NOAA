@@ -497,6 +497,42 @@ struct WeatherAPIForecastResponse: Decodable {
 
         let date: String               // "yyyy-MM-dd"
         let day: Day
+        let hour: [Hour]               // ✅ add this
+
+        struct Hour: Decodable, Identifiable {
+            let time_epoch: Int
+            let time: String            // "2026-01-18 09:00"
+            let temp_f: Double
+            let condition: Condition
+            let chance_of_rain: Int?    // may be Int or String sometimes
+
+            var id: Int { time_epoch }
+
+            struct Condition: Decodable {
+                let text: String
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case time_epoch, time, temp_f, condition, chance_of_rain
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                time_epoch = try c.decode(Int.self, forKey: .time_epoch)
+                time = try c.decode(String.self, forKey: .time)
+                temp_f = try c.decode(Double.self, forKey: .temp_f)
+                condition = try c.decode(Condition.self, forKey: .condition)
+
+                // WeatherAPI sometimes returns this as string or number
+                if let i = try? c.decode(Int.self, forKey: .chance_of_rain) {
+                    chance_of_rain = i
+                } else if let s = try? c.decode(String.self, forKey: .chance_of_rain), let i = Int(s) {
+                    chance_of_rain = i
+                } else {
+                    chance_of_rain = nil
+                }
+            }
+        }
 
         struct Day: Decodable {
             let maxtemp_f: Double
@@ -518,7 +554,6 @@ struct WeatherAPIForecastResponse: Decodable {
                 mintemp_f = try c.decode(Double.self, forKey: .mintemp_f)
                 condition = try c.decode(Condition.self, forKey: .condition)
 
-                // WeatherAPI may return this as either a string or a number depending on plan/endpoint.
                 if let i = try? c.decode(Int.self, forKey: .daily_chance_of_rain) {
                     daily_chance_of_rain = i
                 } else if let s = try? c.decode(String.self, forKey: .daily_chance_of_rain), let i = Int(s) {
@@ -624,6 +659,49 @@ final class WeatherAPIForecastViewModel: ObservableObject {
         return df
     }()
 
+    private func closestHour(
+           _ hours: [WeatherAPIForecastResponse.ForecastDay.Hour],
+           target: Int
+       ) -> WeatherAPIForecastResponse.ForecastDay.Hour? {
+
+           func hourOfDay(_ h: WeatherAPIForecastResponse.ForecastDay.Hour) -> Int? {
+               // time format: "yyyy-MM-dd HH:mm"
+               guard h.time.count >= 5 else { return nil }
+               let hh = h.time.suffix(5).prefix(2)
+               return Int(hh)
+           }
+
+           let candidates = hours.compactMap { h -> (WeatherAPIForecastResponse.ForecastDay.Hour, Int)? in
+               guard let hod = hourOfDay(h) else { return nil }
+               return (h, abs(hod - target))
+           }
+
+           return candidates.min(by: { $0.1 < $1.1 })?.0
+       }
+
+       private func hourLine(
+           _ label: String,
+           _ h: WeatherAPIForecastResponse.ForecastDay.Hour?
+       ) -> String? {
+
+           guard let h else { return nil }
+
+           let temp = Int(h.temp_f.rounded())
+           let cond = h.condition.text
+
+           let pop = h.chance_of_rain
+               .map { Int((Double($0) / 10.0).rounded() * 10) }
+               .flatMap { $0 == 0 ? nil : $0 }
+
+           if let pop {
+               return "\(label): \(temp)° • \(cond) • \(pop)%"
+           } else {
+               return "\(label): \(temp)° • \(cond)"
+           }
+       }
+
+    
+    
     func loadIfNeeded(for coord: CLLocationCoordinate2D) async {
         if let last = lastCoord,
            abs(last.latitude - coord.latitude) < 0.01,
@@ -653,8 +731,8 @@ final class WeatherAPIForecastViewModel: ObservableObject {
             let forecastDays = try await service.fetchForecast(lat: coord.latitude, lon: coord.longitude, apiKey: key)
 
             days = forecastDays.map { fd in
+                // 1️⃣ date / labels
                 let date = fd.date
-
                 let weekday: String
                 let dateText: String
                 if let parsed = dateParser.date(from: date) {
@@ -665,21 +743,49 @@ final class WeatherAPIForecastViewModel: ObservableObject {
                     dateText = ""
                 }
 
+                // 2️⃣ hi / lo
                 let hi = Int(fd.day.maxtemp_f.rounded())
                 let lo = Int(fd.day.mintemp_f.rounded())
+
+                // 3️⃣ daily PoP (already rounded + zero suppressed)
                 let chance: Int? = fd.day.daily_chance_of_rain
                     .map { Int((Double($0) / 10.0).rounded() * 10) }
                     .flatMap { $0 == 0 ? nil : $0 }
-                
-                let cond = fd.day.condition.text
-                let popLine = chance.map { "Chance of rain: \($0)%." } ?? ""
-                let detail = "\(cond). High \(hi)°, low \(lo)°. \(popLine)".trimmingCharacters(in: .whitespaces)
 
+                // 4️⃣ pick representative hours
+                let morning = closestHour(fd.hour, target: 9)
+                let afternoon = closestHour(fd.hour, target: 15)
+                let evening = closestHour(fd.hour, target: 21)
+
+                // 5️⃣ build hourly lines
+                let hourlyLines = [
+                    hourLine("Morning", morning),
+                    hourLine("Afternoon", afternoon),
+                    hourLine("Evening", evening)
+                ].compactMap { $0 }
+
+                // 6️⃣ ✅ BUILD detailText HERE
+                var lines: [String] = []
+                lines.append(fd.day.condition.text)
+                lines.append("High \(hi)° / Low \(lo)°")
+
+                if let chance {
+                    lines.append("Chance of rain: \(chance)%")
+                }
+
+                if !hourlyLines.isEmpty {
+                    lines.append("")                // blank line for readability
+                    lines.append(contentsOf: hourlyLines)
+                }
+
+                let detail = lines.joined(separator: "\n")
+
+                // 7️⃣ return DayRow
                 return DayRow(
                     id: date,
                     weekday: weekday,
                     dateText: dateText,
-                    conditionText: cond,
+                    conditionText: fd.day.condition.text,
                     hiF: hi,
                     loF: lo,
                     chanceRain: chance,

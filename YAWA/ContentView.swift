@@ -61,8 +61,6 @@ struct ContentView: View {
     @StateObject private var weatherApiForecastViewModel = WeatherAPIForecastViewModel()
     
     
-    @StateObject private var location = LocationManager()
-    
     @State private var lastCurrentRefreshAt: Date? = nil
     @State private var lastForecastRefreshAt: Date? = nil
     @State private var lastRefreshCoord: CLLocationCoordinate2D? = nil
@@ -82,32 +80,24 @@ struct ContentView: View {
  //   @State private var showingRadar = false
     @State private var radarTarget: RadarTarget?
     
+    
+    
+    private var effectiveWeatherApiCoordinate: CLLocationCoordinate2D? {
+        // In PWS mode, anchor WeatherAPI forecast to the station coordinate (published by WeatherViewModel)
+        if source == .pws {
+            return viewModel.pwsStationCoordinate
+        }
+        // Otherwise follow the active (GPS/favorite) coordinate
+        return locationManager.coordinate
+    }
 
     private var weatherApiCoordKey: String {
-        guard let c = weatherApiTargetCoordinate else { return "" }
+        guard let c = effectiveWeatherApiCoordinate else { return "" }
         let lat = (c.latitude * 100).rounded() / 100
         let lon = (c.longitude * 100).rounded() / 100
         return "\(lat),\(lon)"
     }
     
-    private var pwsStationCoordinate: CLLocationCoordinate2D? {
-        let d = UserDefaults.standard
-        guard d.object(forKey: "pwsStationLat") != nil,
-              d.object(forKey: "pwsStationLon") != nil else { return nil }
-
-        let lat = d.double(forKey: "pwsStationLat")
-        let lon = d.double(forKey: "pwsStationLon")
-        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
-    }
-
-    private var weatherApiTargetCoordinate: CLLocationCoordinate2D? {
-        // In PWS mode, forecast should be for the station
-        if source == .pws {
-            return pwsStationCoordinate
-        }
-        // Otherwise follow the device coordinate (your existing behavior)
-        return locationManager.coordinate
-    }
     
     // nil = “use GPS”; non-nil = user selected a city/favorite
     @State private var selectedCity: CitySearchViewModel.Result?
@@ -159,10 +149,48 @@ struct ContentView: View {
         }
     }
     
-    struct AlertSection: Identifiable {
+    struct LegacyAlertSection: Identifiable {
         let id = UUID()
         let title: String
         let paragraphs: [String]
+    }
+    func parseAlertSections(from text: String) -> [LegacyAlertSection] {
+        let cleaned = text
+            .replacingOccurrences(of: "\r", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let patterns = [
+            ("WHAT", "WHAT"),
+            ("WHEN", "WHEN"),
+            ("IMPACTS", "IMPACTS")
+        ]
+
+        var sections: [LegacyAlertSection] = []
+
+        for (key, title) in patterns {
+            if let range = cleaned.range(of: "\(key)...") {
+                let start = range.upperBound
+ //               let remainder = cleaned[start...]
+
+                let end = patterns
+                    .compactMap { cleaned.range(of: "\($0.0)...", range: start..<cleaned.endIndex)?.lowerBound }
+                    .min() ?? cleaned.endIndex
+
+                let body = cleaned[start..<end]
+                    .replacingOccurrences(of: "\n\n", with: "\n")
+                    .split(separator: "\n")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+
+                if !body.isEmpty {
+                    sections.append(
+                        LegacyAlertSection(title: title.capitalized, paragraphs: body)
+                    )
+                }
+            }
+        }
+
+        return sections
     }
     
     @Environment(\.scenePhase) private var scenePhase
@@ -189,12 +217,6 @@ struct ContentView: View {
         return Date().timeIntervalSince(last) > refreshMinInterval
     }
 
-    private func movedEnough(from old: CLLocationCoordinate2D?, to new: CLLocationCoordinate2D) -> Bool {
-        guard let old else { return true }
-        let dLat = abs(old.latitude - new.latitude)
-        let dLon = abs(old.longitude - new.longitude)
-        return dLat > 0.02 || dLon > 0.02   // ~1–2 miles-ish; adjust as you like
-    }
 
     private func recordRefresh(coord: CLLocationCoordinate2D?) {
         lastCurrentRefreshAt = Date()
@@ -290,281 +312,35 @@ struct ContentView: View {
     }
     
     
-    
     var body: some View {
+        rootView
+    }
+
+    // MARK: - Root view (extracted to help the compiler)
+
+    private var rootView: some View {
         ZStack {
             YAWATheme.sky.ignoresSafeArea()
-            VStack(spacing: 18) {
-
-                headerSection
-
-                tilesSection
-
-// MARK: Inline daily forecast (NOAA only) — scrolls under tiles
-                if source == .noaa {
-                    Text("Daily Forecast")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(YAWATheme.textPrimary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-
-                    ScrollView(showsIndicators: true) {
-                        inlineForecastSection
-                            .padding(.bottom, 12)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(maxHeight: .infinity) // ✅ takes remaining space so it can scroll
-                    .refreshable {
-                        isManualRefreshing = true
-                        defer { isManualRefreshing = false }
-
-                        await refreshNow()
-                        await refreshForecastNow()
-
-                        successHaptic()
-                    }
-
-                } else {
-                    Text("Daily Forecast")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(YAWATheme.textPrimary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-
-                    // Placeholder for WeatherAPI.com daily forecast (to be wired next)
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "calendar")
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(YAWATheme.textSecondary)
-
-                            Text("Station Forecast (WeatherAPI)")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(YAWATheme.textPrimary)
-
-                            Spacer()
-                        }
-
-                        if weatherApiForecastViewModel.isLoading {
-                            ProgressView()
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        } else if let err = weatherApiForecastViewModel.errorMessage {
-                            Text(err)
-                                .font(.subheadline)
-                                .foregroundStyle(YAWATheme.textSecondary)
-                        } else if weatherApiForecastViewModel.days.isEmpty {
-                            Text("No forecast data.")
-                                .font(.subheadline)
-                                .foregroundStyle(YAWATheme.textSecondary)
-                        } else {
-                            VStack(spacing: 10) {
-                                ForEach(Array(weatherApiForecastViewModel.days.enumerated()), id: \.element.id) { index, d in
-                                    let (sym, color) = conditionsSymbolAndColor(for: d.conditionText, isNight: false)
-                                    let popText = d.chanceRain.map { "\($0)%" }
-
-                                    HStack(spacing: 10) {
-                                        // Left column (fixed)
-                                        HStack(spacing: 4) {
-                                            Text(d.weekday)
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundStyle(YAWATheme.textPrimary)
-
-                                            Text(d.dateText)
-                                                .font(.caption)
-                                                .foregroundStyle(YAWATheme.textSecondary)
-                                        }
-                                        .frame(width: sideCol, alignment: .leading)
-
-                                        // Middle column (true center)
-                                        VStack(spacing: 2) {
-                                            Image(systemName: sym)
-                                                .symbolRenderingMode(.hierarchical)
-                                                .foregroundStyle(color)
-                                                .font(.title3)
-
-                                            Group {
-                                                if let popText {
-                                                    Text(popText)
-                                                } else {
-                                                    Text("00%").hidden() // keeps identical layout/baseline
-                                                }
-                                            }
-                                            .font(.caption2.weight(.semibold))
-                                            .monospacedDigit()
-                                            .foregroundStyle(YAWATheme.textSecondary)
-                                        }
-                                        .frame(height: 34, alignment: .center)
-                                        .frame(maxWidth: .infinity, alignment: .center)
-
-                                        // Right column (fixed)
-                                        Text("H \(d.hiF)°  L \(d.loF)°")
-                                            .font(.subheadline.weight(.semibold))
-                                            .monospacedDigit()
-                                            .foregroundStyle(YAWATheme.textPrimary)
-                                            .frame(width: sideCol, alignment: .trailing)
-                                    }
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        selectedDetail = DetailPayload(
-                                            title: "\(d.weekday) \(d.dateText)",
-                                            body: d.detailText
-                                        )
-                                    }
-
-                                    if index < weatherApiForecastViewModel.days.count - 1 {
-                                        Divider().opacity(0.5)
-                                    }
-                                }
-                            }
-                        }
-                        if source == .pws {
-                            Divider()
-                                .opacity(0.25)
-                                .padding(.top, 6)
-
-                            Text("WeatherAPI rain chance may differ from NOAA PoP.")
-                                .font(.caption)
-                                .foregroundStyle(YAWATheme.textTertiary)
-                                .multilineTextAlignment(.leading)
-                                .padding(.top, 4)
-                        }
-                    }
-                    .padding(14)
-                    .background(YAWATheme.card)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .task(id: weatherApiCoordKey) {
-                        guard let coord = weatherApiTargetCoordinate else { return }
-                        await weatherApiForecastViewModel.loadIfNeeded(for: coord)
-                    }
-                    
-                    Spacer(minLength: 0)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 16)
-
-            // ✅ Easter egg overlay (inside ZStack, after main VStack)
-            if showEasterEgg {
-                VStack {
-                    Spacer().frame(height: 10)
-
-                    Text("Yawa ✨ Yet Another Weather App")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.thinMaterial)
-                        .clipShape(Capsule())
-                        .transition(.move(edge: .top).combined(with: .opacity))
-
-                    Spacer()
-                }
-                .animation(.easeInOut(duration: 0.2), value: showEasterEgg)
-                .zIndex(10) // keep it above everything
-            }
-
+            mainStack
         }
-//        .onAppear {
-//                locationManager.request()
-//            }
-        // ============================
-        // 🔽 CODE SNIPPET 1 STARTS HERE
-        // ============================
-
-        
-        .task {
-            // 🔔 Ask for notification permission once on launch
-            await NotificationService.shared.requestAuthorizationIfNeeded()
-            locationManager.request()
-
-            // immediate refresh on launch
-            viewModel.setLoadingPlaceholders()
-            if source == .noaa { forecastVM.setLoadingPlaceholders() }
-            await Task.yield()
-
-            await refreshNow()
-            if source == .noaa { await refreshForecastNow() }
-
-            recordRefresh(coord: locationManager.coordinate)
-        }
-        
+        .task { await onFirstAppearTask() }
         .onReceive(locationManager.$coordinate) { coord in
-            guard let coord else { return }
-            guard selection.selectedFavorite == nil else { return }
-            guard source != .pws else { return }
-
-            let needs = pendingForegroundRefresh
-                || shouldRefreshNow(last: lastCurrentRefreshAt)
-                || movedEnough(from: lastRefreshCoord, to: coord)
-
-            guard needs else { return }
-
-            Task {
-                pendingForegroundRefresh = false
-
-                viewModel.setLoadingPlaceholders()
-                if source == .noaa { forecastVM.setLoadingPlaceholders() }
-                await Task.yield()
-
-                await refreshNow()
-                if source == .noaa { await refreshForecastNow() }
-
-                recordRefresh(coord: coord)
-            }
+            onCoordinateChange(coord)
         }
-        
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            guard selection.selectedFavorite == nil else { return } // favorites handled elsewhere
-
-            pendingForegroundRefresh = true
-            locationManager.refresh()   // one-shot location request
+            onScenePhaseChange(phase)
         }
         .onChange(of: selection.selectedFavorite?.id) { _, _ in
-            // favorite/current location changed — refresh immediately
-            Task {
-                viewModel.setLoadingPlaceholders()
-                if source == .noaa {
-                    forecastVM.setLoadingPlaceholders()
-                }
-                await Task.yield()
-
-                await refreshNow()
-                await refreshForecastNow()
-            }
+            Task { await onFavoriteChanged() }
         }
         .onChange(of: sourceRaw) { _, newValue in
-            if newValue == CurrentConditionsSource.pws.rawValue {
-                // switching to PWS makes favorites irrelevant
-                selection.selectedFavorite = nil
-                previousSourceRaw = nil
-                viewModel.pwsLabel = ""
-            }
-
-            Task {
-                viewModel.setLoadingPlaceholders()
-                if source == .noaa {
-                    forecastVM.setLoadingPlaceholders()
-                }
-                await Task.yield()
-
-                await refreshNow()
-                await refreshForecastNow()
-            }
+            Task { await onSourceChanged(newValue) }
         }
-
-        // 🔹 Navigation + toolbar MUST be attached here
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                ToolbarIconButton("star.circle.fill", tint: .white) { showingLocations = true }
-                ToolbarIconButton("gearshape.fill", tint: .white) { showingSettings = true }
-
-            }
-        }
+        .toolbar { topBarToolbar }
         .tint(YAWATheme.textSecondary)
-        .sheet(isPresented: $showingSettings) {
-            SettingsView()
-        }
+        .sheet(isPresented: $showingSettings) { SettingsView() }
         .sheet(isPresented: $showingLocations) {
             LocationsSheet(
                 showingLocations: $showingLocations,
@@ -574,164 +350,306 @@ struct ContentView: View {
         }
         .sheet(item: $radarTarget) { target in
             RadarView(target: target)
-                .presentationDetents([.large]) // optional
-                .presentationDragIndicator(.visible)     // optional
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(item: $selectedDetail) { detail in
-            NavigationStack {
-                ZStack {
-                    // ✅ Always keep the sheet on your sky background
-                    YAWATheme.sky.ignoresSafeArea()
-
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-
-                            switch detail.body {
-
-                            case .text(let text):
-                                Text(text)
-                                    .font(.callout)
-                                    .foregroundStyle(YAWATheme.textPrimary)
-                                    .lineSpacing(6)
-                                    .multilineTextAlignment(.leading)
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                            case .alert(let description, let instructions, let severity):
-
-                                // MAIN NARRATIVE (WHAT / WHEN / IMPACTS / ADDITIONAL DETAILS)
-                                if let description, !description.isEmpty {
-                                    let sections = parseAlertNarrativeSections(from: description)
-
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        ForEach(sections) { s in
-                                            VStack(alignment: .leading, spacing: 4) { // was 6
-                                                if let label = s.label {
-                                                    Text(label)
-                                                        .font(.headline)
-                                                        .foregroundStyle(YAWATheme.textPrimary)
-                                                }
-
-                                                Text(s.body)
-                                                    .font(.callout)
-                                                    .foregroundStyle(YAWATheme.textPrimary)
-                                                    .lineSpacing(6)
-                                                    .multilineTextAlignment(.leading)
-                                                    .textSelection(.enabled)
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // WHAT TO DO — proper bullets
-                                if !instructions.isEmpty {
-                                    Text("What to do")
-                                        .font(.headline)
-                                        .foregroundStyle(YAWATheme.textPrimary)
-                                        .padding(.top, (description?.isEmpty ?? true) ? 0 : 4)
-
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        ForEach(instructions, id: \.self) { item in
-                                            let cleaned = stripLeadingBullet(item)
-
-                                            HStack(alignment: .top, spacing: 10) {
-                                                Text("•")
-                                                    .font(.callout.weight(.semibold))
-                                                    .foregroundStyle(YAWATheme.textPrimary)
-                                                    .padding(.top, 1)
-
-                                                Text(cleaned)
-                                                    .font(.callout)
-                                                    .foregroundStyle(YAWATheme.textPrimary)
-                                                    .lineSpacing(4)
-                                                    .multilineTextAlignment(.leading)
-                                                    .textSelection(.enabled)
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // SEVERITY FOOTER
-                                if let severity, !severity.isEmpty {
-                                    Divider().padding(.top, 6)
-
-                                    Text("Severity: \(severity)")
-                                        .font(.footnote)
-                                        .foregroundStyle(YAWATheme.textSecondary)
-                                }
-                            }
-                        }
-                        // ✅ Card styling so the content doesn’t blend into the sky
-                        .padding(16)
-                    }
-                    // added this
-                    .safeAreaInset(edge: .top) {
-                        Divider()
-                            .background(Color.white.opacity(0.18))
-                    }
-                }
-                .navigationTitle(detail.title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
-                                selectedDetail = nil
-                            }
-                        }
-                }
-                // ✅ Make the nav bar match the card surface
-//                .toolbarBackground(.visible, for: .navigationBar)
-//                .toolbarBackground(YAWATheme.card2, for: .navigationBar)
-//                .toolbarColorScheme(.dark, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .preferredColorScheme(.dark)            }
-            // ✅ Keeps the sheet “dark” consistently even if system flips appearance
-            .preferredColorScheme(.dark)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            alertDetailSheet(detail)
         }
-        
-//  MARK: new alerts
-        
         .sheet(isPresented: $showingAllAlerts) {
-            NavigationStack {
-                List {
-                    ForEach(forecastVM.alerts) { a in
-                        InlineAlertRow(alert: a)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                showingAllAlerts = false
-                                openAlertDetail(a)
-                            }
-                            .listRowBackground(YAWATheme.card2)
-                            .listRowSeparator(.hidden)
-                    }
-                }
-                .scrollContentBackground(.hidden)
-                .background(YAWATheme.sky)
-                .navigationTitle("Alerts")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
-                            showingAllAlerts = false
-                        }
-                    }
-                }
-                .toolbarBackground(.visible, for: .navigationBar)
-                .toolbarBackground(YAWATheme.card2, for: .navigationBar)
-            }
-            .preferredColorScheme(.dark)
+            allAlertsSheet
         }
-
-        // ============================
-        // 🔼 CODE SNIPPET 1 ENDS HERE
-        // ============================
     }
 
+    private var mainStack: some View {
+        VStack(spacing: 18) {
+            headerSection
+                .padding(.top, 8)
+
+            tilesSection
+
+            forecastSection
+
+            if showEasterEgg {
+                easterEggOverlay
+            }
+        }
+    }
+
+    private var forecastSection: some View {
+        Group {
+            Text("Daily Forecast")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(YAWATheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            if source == .noaa {
+                ScrollView(showsIndicators: true) {
+                    inlineForecastSection
+                        .padding(.bottom, 12)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(maxHeight: .infinity)
+                .refreshable {
+                    isManualRefreshing = true
+                    defer { isManualRefreshing = false }
+
+                    await refreshNow()
+                    await refreshForecastNow()
+
+                    successHaptic()
+                }
+            } else {
+                ScrollView(showsIndicators: true) {
+                    weatherApiForecastCard
+                        .padding(.bottom, 12)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(maxHeight: .infinity)
+            }
+        }
+//        .padding(.horizontal, 16)
+        .padding(.top, 6)
+//        .padding(.bottom, 16)
+    }
+
+    private var easterEggOverlay: some View {
+        VStack {
+            Spacer().frame(height: 10)
+
+            Text("Yawa ✨ Yet Another Weather App")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.thinMaterial)
+                .clipShape(Capsule())
+                .transition(.move(edge: .top).combined(with: .opacity))
+
+            Spacer()
+        }
+        .animation(.easeInOut(duration: 0.2), value: showEasterEgg)
+        .zIndex(10)
+    }
+
+    private var topBarToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            ToolbarIconButton("star.circle.fill", tint: .white) { showingLocations = true }
+            ToolbarIconButton("gearshape.fill", tint: .white) { showingSettings = true }
+        }
+    }
+
+    // MARK: - Extracted side-effect handlers (compiler-friendly)
+
+    @MainActor
+    private func onFirstAppearTask() async {
+        await NotificationService.shared.requestAuthorizationIfNeeded()
+        locationManager.request()
+
+        viewModel.setLoadingPlaceholders()
+        if source == .noaa { forecastVM.setLoadingPlaceholders() }
+        await Task.yield()
+
+        await refreshNow()
+        if source == .noaa { await refreshForecastNow() }
+
+        recordRefresh(coord: locationManager.coordinate)
+    }
+
+    private func onCoordinateChange(_ coord: CLLocationCoordinate2D?) {
+        guard let coord else { return }
+        guard selection.selectedFavorite == nil else { return }
+        guard source != .pws else { return }
+
+        let needs = pendingForegroundRefresh
+        || shouldRefreshNow(last: lastCurrentRefreshAt)
+        || movedEnough(from: lastRefreshCoord, to: coord)
+
+        guard needs else { return }
+
+        Task {
+            pendingForegroundRefresh = false
+
+            viewModel.setLoadingPlaceholders()
+            if source == .noaa { forecastVM.setLoadingPlaceholders() }
+            await Task.yield()
+
+            await refreshNow()
+            if source == .noaa { await refreshForecastNow() }
+
+            recordRefresh(coord: coord)
+        }
+    }
+
+    private func onScenePhaseChange(_ phase: ScenePhase) {
+        guard phase == .active else { return }
+        guard selection.selectedFavorite == nil else { return }
+
+        pendingForegroundRefresh = true
+        locationManager.refresh()
+    }
+
+    @MainActor
+    private func onFavoriteChanged() async {
+        viewModel.setLoadingPlaceholders()
+        forecastVM.setLoadingPlaceholders()
+        await Task.yield()
+
+        await refreshNow()
+        await refreshForecastNow()
+    }
+
+    @MainActor
+    private func onSourceChanged(_ newValue: String) async {
+        if newValue == CurrentConditionsSource.pws.rawValue {
+            selection.selectedFavorite = nil
+            previousSourceRaw = nil
+            viewModel.pwsLabel = ""
+        }
+
+        viewModel.setLoadingPlaceholders()
+        if source == .noaa { forecastVM.setLoadingPlaceholders() }
+        await Task.yield()
+
+        await refreshNow()
+        await refreshForecastNow()
+    }
+
+    // MARK: - Extracted sheets
+
+    private func alertDetailSheet(_ detail: DetailPayload) -> some View {
+        NavigationStack {
+            ZStack {
+                YAWATheme.sky.ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        switch detail.body {
+                        case .text(let text):
+                            Text(text)
+                                .font(.callout)
+                                .foregroundStyle(YAWATheme.textPrimary)
+                                .lineSpacing(6)
+                                .multilineTextAlignment(.leading)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                        case .alert(let description, let instructions, let severity):
+                            if let description, !description.isEmpty {
+                                let sections = parseAlertNarrativeSections(from: description)
+
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(sections) { s in
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            if let label = s.label {
+                                                Text(label)
+                                                    .font(.headline)
+                                                    .foregroundStyle(YAWATheme.textPrimary)
+                                            }
+
+                                            Text(s.body)
+                                                .font(.callout)
+                                                .foregroundStyle(YAWATheme.textPrimary)
+                                                .lineSpacing(6)
+                                                .multilineTextAlignment(.leading)
+                                                .textSelection(.enabled)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                        }
+                                    }
+                                }
+                            }
+
+                            if !instructions.isEmpty {
+                                Text("What to do")
+                                    .font(.headline)
+                                    .foregroundStyle(YAWATheme.textPrimary)
+                                    .padding(.top, (description?.isEmpty ?? true) ? 0 : 4)
+
+                                VStack(alignment: .leading, spacing: 10) {
+                                    ForEach(instructions, id: \.self) { item in
+                                        let cleaned = stripLeadingBullet(item)
+
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Text("•")
+                                                .font(.callout.weight(.semibold))
+                                                .foregroundStyle(YAWATheme.textPrimary)
+                                                .padding(.top, 1)
+
+                                            Text(cleaned)
+                                                .font(.callout)
+                                                .foregroundStyle(YAWATheme.textPrimary)
+                                                .lineSpacing(4)
+                                                .multilineTextAlignment(.leading)
+                                                .textSelection(.enabled)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                        }
+                                    }
+                                }
+                            }
+
+                            if let severity, !severity.isEmpty {
+                                Divider().padding(.top, 6)
+
+                                Text("Severity: \(severity)")
+                                    .font(.footnote)
+                                    .foregroundStyle(YAWATheme.textSecondary)
+                            }
+                        }
+                    }
+                    .padding(16)
+                }
+                .safeAreaInset(edge: .top) {
+                    Divider()
+                        .background(Color.white.opacity(0.18))
+                }
+            }
+            .navigationTitle(detail.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
+                        selectedDetail = nil
+                    }
+                }
+            }
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .preferredColorScheme(.dark)
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var allAlertsSheet: some View {
+        NavigationStack {
+            List {
+                ForEach(forecastVM.alerts) { a in
+                    InlineAlertRow(alert: a)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            showingAllAlerts = false
+                            openAlertDetail(a)
+                        }
+                        .listRowBackground(YAWATheme.card2)
+                        .listRowSeparator(.hidden)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(YAWATheme.sky)
+            .navigationTitle("Alerts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
+                        showingAllAlerts = false
+                    }
+                }
+            }
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(YAWATheme.card2, for: .navigationBar)
+        }
+        .preferredColorScheme(.dark)
+    }
     // MARK: - Sections
 
     private var headerSection: some View {
@@ -809,7 +727,118 @@ struct ContentView: View {
         }
     }
 
-    private var inlineForecastSection: some View {
+        private var weatherApiForecastCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar")
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(YAWATheme.textSecondary)
+                    
+                    Text("Station Forecast (WeatherAPI)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(YAWATheme.textPrimary)
+                    
+                    Spacer()
+                }
+                
+                if weatherApiForecastViewModel.isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else if let err = weatherApiForecastViewModel.errorMessage {
+                    Text(err)
+                        .font(.subheadline)
+                        .foregroundStyle(YAWATheme.textSecondary)
+                } else if weatherApiForecastViewModel.days.isEmpty {
+                    Text("No forecast data.")
+                        .font(.subheadline)
+                        .foregroundStyle(YAWATheme.textSecondary)
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(Array(weatherApiForecastViewModel.days.enumerated()), id: \.element.id) { index, d in
+                            let (sym, color) = conditionsSymbolAndColor(for: d.conditionText, isNight: false)
+                            let popText = d.chanceRain.map { "\($0)%" }
+                            
+                            HStack(spacing: 10) {
+                                // Left column (fixed)
+                                HStack(spacing: 4) {
+                                    Text(d.weekday)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(YAWATheme.textPrimary)
+                                    
+                                    Text(d.dateText)
+                                        .font(.caption)
+                                        .foregroundStyle(YAWATheme.textSecondary)
+                                }
+                                .frame(width: sideCol, alignment: .leading)
+                                
+                                // Middle column (true center)
+                                VStack(spacing: 2) {
+                                    Image(systemName: sym)
+                                        .symbolRenderingMode(.hierarchical)
+                                        .foregroundStyle(color)
+                                        .font(.title3)
+                                    
+                                    Group {
+                                        if let popText {
+                                            Text(popText)
+                                        } else {
+                                            Text("00%").hidden() // keeps identical layout/baseline
+                                        }
+                                    }
+                                    .font(.caption2.weight(.semibold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(YAWATheme.textSecondary)
+                                }
+                                .frame(height: 34, alignment: .center)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                
+                                // Right column (fixed)
+                                Text("H \(d.hiF)°  L \(d.loF)°")
+                                    .font(.subheadline.weight(.semibold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(YAWATheme.textPrimary)
+                                    .frame(width: sideCol, alignment: .trailing)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                selectedDetail = DetailPayload(
+                                    title: "\(d.weekday) \(d.dateText)",
+                                    body: d.detailText
+                                )
+                            }
+                            
+                            if index < weatherApiForecastViewModel.days.count - 1 {
+                                Divider().opacity(0.5)
+                            }
+                        }
+                    }
+                }
+                if source == .pws {
+                    Divider()
+                        .opacity(0.25)
+                        .padding(.top, 6)
+                    
+                    Text("WeatherAPI rain chance may differ from NOAA PoP.")
+                        .font(.caption)
+                        .foregroundStyle(YAWATheme.textTertiary)
+                        .multilineTextAlignment(.leading)
+                        .padding(.top, 4)
+                }
+            }
+            .padding(14)
+            .background(YAWATheme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .task(id: weatherApiCoordKey) {
+                guard let coord = effectiveWeatherApiCoordinate else { return }
+                
+                print("🌧️ WeatherAPI forecast lookup → lat=\(coord.latitude), lon=\(coord.longitude), source=\(source)")
+                
+                await weatherApiForecastViewModel.loadIfNeeded(for: coord)
+            }
+        }
+
+        
+        private var inlineForecastSection: some View {
         VStack(alignment: .leading, spacing: 9) { // was 12
 
             // Header row (centered title + spinner on right)
@@ -829,15 +858,8 @@ struct ContentView: View {
                     .foregroundStyle(YAWATheme.textSecondary)
             }
 
-            // Alerts & Advisories (tap to expand)
-            // Alerts & Advisories (tap to expand)
             if let first = forecastVM.alerts.first {
                 VStack(alignment: .leading, spacing: 8) {
-//                    Text("Alerts & Advisories - new")
-//                        .font(.subheadline.weight(.semibold))
-//                        .foregroundStyle(YAWATheme.textPrimary) // or your yellow label
-
-                    // Show the first alert row (tap opens detail)
                     InlineAlertRow(alert: first)
                         .contentShape(Rectangle())
                         .onTapGesture { openAlertDetail(first) }
@@ -956,7 +978,7 @@ struct ContentView: View {
                         }
                 }
 
-            } 
+            }
         }
         .padding(14)
         .background(YAWATheme.card)
@@ -1059,13 +1081,12 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    // MARK: - Locations sheet
-
     
     // MARK: - Async refresh
 
     private func refreshNow() async {
         if let f = selection.selectedFavorite {
+            print("🛰️ NOAA refresh → favorite \(f.displayName) lat=\(f.coordinate.latitude), lon=\(f.coordinate.longitude)")
             // Favorites always imply NOAA
             await viewModel.fetchCurrentFromNOAA(
                 lat: f.coordinate.latitude,
@@ -1073,6 +1094,13 @@ struct ContentView: View {
                 locationName: f.displayName
             )
         } else {
+            
+            let lat = locationManager.coordinate?.latitude ?? -999
+                let lon = locationManager.coordinate?.longitude ?? -999
+                let name = locationManager.locationName ?? "unknown"
+
+                print("📍 Phone geolocation → \(name) lat=\(lat), lon=\(lon)")
+            
             // ✅ Clean architecture:
             // In current-location (GPS) mode, do NOT pass a locationName into the fetch.
             // LocationManager's reverse geocode owns the header label, preventing stale “snap back”.
@@ -1220,44 +1248,6 @@ struct ContentView: View {
     }
 
     
-    func parseAlertSections(from text: String) -> [AlertSection] {
-        let cleaned = text
-            .replacingOccurrences(of: "\r", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let patterns = [
-            ("WHAT", "WHAT"),
-            ("WHEN", "WHEN"),
-            ("IMPACTS", "IMPACTS")
-        ]
-
-        var sections: [AlertSection] = []
-
-        for (key, title) in patterns {
-            if let range = cleaned.range(of: "\(key)...") {
-                let start = range.upperBound
- //               let remainder = cleaned[start...]
-
-                let end = patterns
-                    .compactMap { cleaned.range(of: "\($0.0)...", range: start..<cleaned.endIndex)?.lowerBound }
-                    .min() ?? cleaned.endIndex
-
-                let body = cleaned[start..<end]
-                    .replacingOccurrences(of: "\n\n", with: "\n")
-                    .split(separator: "\n")
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                    .filter { !$0.isEmpty }
-
-                if !body.isEmpty {
-                    sections.append(
-                        AlertSection(title: title.capitalized, paragraphs: body)
-                    )
-                }
-            }
-        }
-
-        return sections
-    }
     
     private func normalizeParagraphNewlines(_ s: String) -> String {
         // 1) Normalize line endings
@@ -1523,9 +1513,10 @@ struct ContentView: View {
         .background(.thinMaterial)
         .clipShape(Capsule())
     }
+
 }
 
-private struct AlertSection: Identifiable {
+private struct AlertNarrativeSection: Identifiable {
     let id = UUID()
     let label: String?
     let body: String
@@ -1546,7 +1537,7 @@ private func stripLeadingBullet(_ s: String) -> String {
 
 /// Parses NOAA-style narrative like:
 /// "WHAT...text\n\nWHEN...text\n\nIMPACTS...text"
-private func parseAlertNarrativeSections(from text: String) -> [AlertSection] {
+private func parseAlertNarrativeSections(from text: String) -> [AlertNarrativeSection] {
     let normalized = text
         .replacingOccurrences(of: "\r\n", with: "\n")
         .replacingOccurrences(of: "\r", with: "\n")
@@ -1557,20 +1548,20 @@ private func parseAlertNarrativeSections(from text: String) -> [AlertSection] {
     let labelPattern = labels.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
 
     // Match: LABEL... body (until next LABEL... or end)
-    let pattern = #"(?s)(?:^|\n)\s*(\#(labelPattern))\s*\.{3}\s*(.*?)(?=(?:\n\s*(?:\#(labelPattern))\s*\.{3})|\z)"#
+    let pattern = #"(?s)(?:^|\n)\s*(\(labelPattern))\s*\.{3}\s*(.*?)(?=(?:\n\s*(?:\(labelPattern))\s*\.{3})|\z)"#
 
     guard let re = try? NSRegularExpression(pattern: pattern, options: []) else {
-        return [AlertSection(label: nil, body: normalized)]
+        return [AlertNarrativeSection(label: nil, body: normalized)]
     }
 
     let ns = normalized as NSString
     let matches = re.matches(in: normalized, options: [], range: NSRange(location: 0, length: ns.length))
 
     if matches.isEmpty {
-        return [AlertSection(label: nil, body: normalized)]
+        return [AlertNarrativeSection(label: nil, body: normalized)]
     }
 
-    var out: [AlertSection] = []
+    var out: [AlertNarrativeSection] = []
 
     for m in matches {
         let rawLabel = ns.substring(with: m.range(at: 1))
@@ -1586,11 +1577,11 @@ private func parseAlertNarrativeSections(from text: String) -> [AlertSection] {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if !body.isEmpty {
-            out.append(AlertSection(label: "\(label)…", body: body))
+            out.append(AlertNarrativeSection(label: "\(label)…", body: body))
         }
     }
 
-    return out.isEmpty ? [AlertSection(label: nil, body: normalized)] : out
+    return out.isEmpty ? [AlertNarrativeSection(label: nil, body: normalized)] : out
 }
 
 

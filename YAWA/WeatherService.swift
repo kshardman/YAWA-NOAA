@@ -45,6 +45,10 @@ struct WeatherService {
         let pressure: String
         let precip: String
         let lastUpdated: Date
+
+        // ✅ Codable-friendly station location
+        let stationLat: Double?
+        let stationLon: Double?
     }
 
     // MARK: - Public API
@@ -59,6 +63,8 @@ struct WeatherService {
 
         let stationID: String
         let apiKey: String
+        // Persist PWS station coordinate (if present) so PWS-mode forecast can anchor to the station
+    
 
         if !storedStation.isEmpty && !storedKey.isEmpty {
             stationID = storedStation
@@ -102,9 +108,10 @@ struct WeatherService {
         }
 
         let decoded = try JSONDecoder().decode(WeatherResponse.self, from: data)
-        guard let obs = decoded.observations.first else { throw ServiceError.noObservations }
+        guard let obs = decoded.observations.first else {
+            throw ServiceError.noObservations
+        }
 
-        // Persist PWS station coordinate (if present) so PWS-mode forecast can anchor to the station
         if let lat = obs.lat, let lon = obs.lon {
             defaults.set(lat, forKey: "pwsStationLat")
             defaults.set(lon, forKey: "pwsStationLon")
@@ -122,7 +129,9 @@ struct WeatherService {
             windDirText: windText,
             pressure: String(format: "%.2f", obs.imperial.pressure),
             precip: String(format: "%.2f", obs.imperial.precipTotal),
-            lastUpdated: Date()
+            lastUpdated: Date(),
+            stationLat: obs.lat,
+            stationLon: obs.lon
         )
     }
     // MARK: - Config

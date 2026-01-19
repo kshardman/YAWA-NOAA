@@ -61,6 +61,8 @@ final class WeatherViewModel: ObservableObject {
     
     @Published var activeCoordinate: CLLocationCoordinate2D? = nil
     @Published var activeLocationTitle: String = "Current Location"
+    
+    @Published var pwsStationCoordinate: CLLocationCoordinate2D?
    
     // ✅ Visual cue: clear tile values while we fetch new data
     func setLoadingPlaceholders() {
@@ -242,6 +244,7 @@ final class WeatherViewModel: ObservableObject {
 //    @MainActor
     @MainActor
     func fetchCurrentFromNOAA(lat: Double, lon: Double, locationName: String? = nil) async {
+        print("🛰️ NOAA current conditions lookup → lat=\(lat), lon=\(lon), locationName=\(locationName ?? "nil")")
         do {
             let result = try await noaaCurrent.fetchLatestObservation(lat: lat, lon: lon)
             noaaStationID = result.stationId
@@ -344,6 +347,13 @@ final class WeatherViewModel: ObservableObject {
         pressure = snap.pressure
         precipitation = String(format: "%.2f in", Double(snap.precip) ?? 0.0)
         lastUpdated = snap.lastUpdated
+
+        // ---- PWS station coordinate (used to anchor WeatherAPI forecast in PWS mode) ----
+        if let lat = snap.stationLat, let lon = snap.stationLon {
+            pwsStationCoordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        } else {
+            pwsStationCoordinate = nil
+        }
     }
 }
 
