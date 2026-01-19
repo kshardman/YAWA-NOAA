@@ -16,7 +16,7 @@ enum CurrentConditionsSource: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .noaa: return "Automatic (Nearby station)"
+        case .noaa: return "NOAA (Nearby station)"
         case .pws:  return "Personal Weather Station"
         }
     }
@@ -24,7 +24,7 @@ enum CurrentConditionsSource: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .noaa: return "Uses your location + weather.gov observations"
-        case .pws:  return "Uses your configured station + API key"
+        case .pws:  return "Uses your configured station + weatherAPI.com API key"
         }
     }
 }

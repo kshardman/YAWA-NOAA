@@ -149,7 +149,7 @@ private extension SettingsView {
 
     var sourceSection: some View {
         Section {
-            Picker(selection: $sourceRaw) {
+            Picker("", selection: $sourceRaw) {
                 ForEach(CurrentConditionsSource.allCases) { s in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(s.title)
@@ -161,10 +161,8 @@ private extension SettingsView {
                     }
                     .tag(s.rawValue)
                 }
-            } label: {
-                Text("Source")
-                    .foregroundStyle(YAWATheme.textPrimary)   // ← this is the key
             }
+            .labelsHidden()
             .pickerStyle(.inline)
 
             // ✅ Only show PWS details when PWS is selected
