@@ -374,6 +374,7 @@ struct ContentView: View {
                 easterEggOverlay
             }
         }
+        .padding(.horizontal, 16)   // ✅ KEY CHANGE
     }
 
     private var forecastSection: some View {
@@ -519,7 +520,8 @@ struct ContentView: View {
     private func alertDetailSheet(_ detail: DetailPayload) -> some View {
         NavigationStack {
             ZStack {
-                YAWATheme.sky.ignoresSafeArea()
+                YAWATheme.card2
+                    .ignoresSafeArea()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -596,6 +598,7 @@ struct ContentView: View {
                         }
                     }
                     .padding(16)
+                    .background(YAWATheme.card2)
                 }
             }
             .navigationTitle(detail.title)
@@ -1310,6 +1313,9 @@ struct ContentView: View {
         var out: [String] = []
         var currentParagraph = ""
 
+        // Tracks whether the last emitted line was a star/bullet/header that may have wrapped
+        var lastLineCanContinue = false
+
         func flushParagraph() {
             let trimmed = currentParagraph.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
@@ -1323,6 +1329,16 @@ struct ContentView: View {
             if out.last != "" {
                 out.append("")
             }
+            lastLineCanContinue = false
+        }
+
+        func isHeaderLike(_ t: String) -> Bool {
+            let upper = t.uppercased()
+            return upper.hasSuffix("...") && upper == upper
+        }
+
+        func isBulletLike(_ t: String) -> Bool {
+            t.hasPrefix("*") || t.hasPrefix("•") || t.hasPrefix("-")
         }
 
         for line in lines {
@@ -1333,25 +1349,40 @@ struct ContentView: View {
                 continue
             }
 
-            let upper = t.uppercased()
+            let bullet = isBulletLike(t)
+            let header = isHeaderLike(t)
 
-            // Treat bullet-ish lines and NOAA section headers as standalone lines.
-            // This keeps lists readable while still fixing mid-sentence wraps.
-            let isBulletLine = t.hasPrefix("*") || t.hasPrefix("•") || t.hasPrefix("-")
-            let isHeaderLine = upper.hasSuffix("...") && upper == upper
-
-            // Conservatively drop WHERE blocks (often redundant in the detail view)
-            if upper.hasPrefix("WHERE...") || upper.hasPrefix("* WHERE...") {
+            // If the previous emitted line was a star/bullet/header and NOAA wrapped the value
+            // onto the next line(s) without repeating the bullet, stitch it back together.
+            if !bullet && !header && lastLineCanContinue {
+                if let last = out.last, last != "" {
+                    out[out.count - 1] = last + " " + t
+                } else if !currentParagraph.isEmpty {
+                    currentParagraph += " " + t
+                } else {
+                    currentParagraph = t
+                }
                 continue
             }
 
-            if isBulletLine || isHeaderLine {
+            // Treat bullet-ish lines and NOAA section headers as standalone lines.
+            // This keeps lists readable while still fixing mid-sentence wraps.
+            if bullet || header {
                 flushParagraph()
                 out.append(t)
+
+                // Star bullets like "* WHERE..." frequently wrap onto following lines.
+                // Allow continuation only for lines that look like NOAA bullets/headers.
+                if t.hasPrefix("*") && t.contains("...") {
+                    lastLineCanContinue = true
+                } else {
+                    lastLineCanContinue = false
+                }
                 continue
             }
 
             // Normal prose: join hard-wrapped lines into a single paragraph.
+            lastLineCanContinue = false
             if currentParagraph.isEmpty {
                 currentParagraph = t
             } else {
@@ -1469,7 +1500,7 @@ struct ContentView: View {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .uppercased()
 
-            if label == "WHERE" { return nil }   // ✅ drop WHERE
+            // (Removed WHERE bullet dropping)
 
             let value = s[r.upperBound...]
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1551,7 +1582,7 @@ private func parseAlertNarrativeSections(from text: String) -> [AlertNarrativeSe
         .trimmingCharacters(in: .whitespacesAndNewlines)
 
     // labels you care about (add more if you want)
-    let labels = ["WHAT", "WHEN", "IMPACTS", "ADDITIONAL DETAILS", "PRECAUTIONARY/PREPAREDNESS ACTIONS"]
+    let labels = ["WHAT", "WHEN", "WHERE", "IMPACTS", "ADDITIONAL DETAILS", "PRECAUTIONARY/PREPAREDNESS ACTIONS"]
     // Intentionally unused (rollback to the warning state per request)
     let labelPattern = labels.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
 
