@@ -597,28 +597,18 @@ struct ContentView: View {
                     }
                     .padding(16)
                 }
-                // .background(YAWATheme.sky) // REMOVED per instructions
             }
             .navigationTitle(detail.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         selectedDetail = nil
                     }
-                    .buttonStyle(.plain)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(
-                        Capsule()
-                            .fill(Color.white.opacity(0.18))
-                    )
                 }
             }
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(YAWATheme.card2, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
         } // end of navigation stack
         .background(YAWATheme.sky)
@@ -643,25 +633,17 @@ struct ContentView: View {
             }
             .scrollContentBackground(.hidden)
             .background(YAWATheme.sky)
-            .listRowBackground(YAWATheme.card2)
             .navigationTitle("Alerts")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { showingAllAlerts = false }
-                        .buttonStyle(.plain)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(
-                            Capsule()
-                                .fill(Color.white.opacity(0.18))
-                        )
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        showingAllAlerts = false
+                    }
                 }
             }
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(YAWATheme.card2, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
         }
         .background(YAWATheme.sky)
@@ -1843,20 +1825,13 @@ private struct LocationsSheet: View {
                 .navigationTitle("Favorites")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .confirmationAction) {
                         Button("Done") {
                             searchVM.query = ""
                             searchVM.results = []
                             searchFocused = false
                             showingLocations = false
                         }
-                        .buttonStyle(.plain)
-                        .font(.headline.weight(.semibold))        // ⬆️ slightly larger to match Radar
-                        .foregroundStyle(Color.white)             // ⬆️ brighter / whiter like Radar
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(.thinMaterial)
-                        .clipShape(Capsule())
                     }
                 }
             // Nav bar glass + readable title (Daily Forecast style)
