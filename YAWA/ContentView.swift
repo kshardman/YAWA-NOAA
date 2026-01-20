@@ -597,24 +597,31 @@ struct ContentView: View {
                     }
                     .padding(16)
                 }
-                .safeAreaInset(edge: .top) {
-                    Divider()
-                        .background(Color.white.opacity(0.18))
-                }
+                // .background(YAWATheme.sky) // REMOVED per instructions
             }
             .navigationTitle(detail.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
+                    Button("Done") {
                         selectedDetail = nil
                     }
+                    .buttonStyle(.plain)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.18))
+                    )
                 }
             }
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .preferredColorScheme(.dark)
-        }
+            .toolbarBackground(YAWATheme.card2, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+        } // end of navigation stack
+        .background(YAWATheme.sky)
         .preferredColorScheme(.dark)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -636,18 +643,28 @@ struct ContentView: View {
             }
             .scrollContentBackground(.hidden)
             .background(YAWATheme.sky)
+            .listRowBackground(YAWATheme.card2)
             .navigationTitle("Alerts")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
-                        showingAllAlerts = false
-                    }
+                    Button("Done") { showingAllAlerts = false }
+                        .buttonStyle(.plain)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(
+                            Capsule()
+                                .fill(Color.white.opacity(0.18))
+                        )
                 }
             }
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(YAWATheme.card2, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
         }
+        .background(YAWATheme.sky)
         .preferredColorScheme(.dark)
     }
     // MARK: - Sections
@@ -707,6 +724,7 @@ struct ContentView: View {
                         }
                     }
                     .opacity(0.95)
+                    .padding(.trailing, 18)
                     .overlay(
                         Image(systemName: "arrow.clockwise")
                             .font(.caption2.weight(.semibold))
@@ -1296,94 +1314,75 @@ struct ContentView: View {
     }
     
     private func formatNOAAAlertBody(_ raw: String) -> String {
-        // Normalize line endings
+        // Goal: remove NOAA hard-wrapped line breaks (which make lines end early)
+        // while preserving real paragraph breaks and keeping bullet/header lines intact.
+
+        // 1) Normalize line endings
         let s = raw
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Split + trim + strip leading "*" / "•"
-        let lines = s
-            .components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .map { line -> String in
-                var l = line
-                while l.hasPrefix("*") || l.hasPrefix("•") {
-                    l.removeFirst()
-                    l = l.trimmingCharacters(in: .whitespaces)
-                }
-                return l
+        let lines = s.components(separatedBy: "\n")
+
+        var out: [String] = []
+        var currentParagraph = ""
+
+        func flushParagraph() {
+            let trimmed = currentParagraph.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                out.append(trimmed)
             }
-
-        // Section detection (NOAA uses WHAT... WHERE... WHEN... IMPACTS... etc)
-        func sectionHeader(_ line: String) -> String? {
-            let upper = line.uppercased()
-
-            // Typical NOAA pattern: "WHAT..." / "WHERE..." / "WHEN..." / "IMPACTS..."
-            let known = ["WHAT...", "WHERE...", "WHEN...", "IMPACTS...", "HAZARD...", "SOURCE...", "INFO..."]
-            for k in known where upper.hasPrefix(k) { return k }
-
-            // Also handle "What:" style
-            if upper.hasPrefix("WHAT:") { return "WHAT..." }
-            if upper.hasPrefix("WHERE:") { return "WHERE..." }
-            if upper.hasPrefix("WHEN:") { return "WHEN..." }
-            if upper.hasPrefix("IMPACTS:") { return "IMPACTS..." }
-
-            return nil
+            currentParagraph = ""
         }
 
-        var outBlocks: [String] = []
-        var currentLines: [String] = []
-        var skippingWhere = false
-
-        func flush() {
-            let joined = currentLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !joined.isEmpty { outBlocks.append(joined) }
-            currentLines.removeAll()
+        func appendBlankLine() {
+            // Avoid stacking multiple blank lines
+            if out.last != "" {
+                out.append("")
+            }
         }
 
         for line in lines {
-            if line.isEmpty {
-                // treat blank lines as paragraph separators
-                flush()
+            let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.isEmpty {
+                flushParagraph()
+                appendBlankLine()
                 continue
             }
 
-            if let header = sectionHeader(line) {
-                // whenever we hit a header, end prior block
-                flush()
+            let upper = t.uppercased()
 
-                // Start/stop WHERE skipping
-                if header == "WHERE..." {
-                    skippingWhere = true
-                    continue
-                } else {
-                    // leaving WHERE section when we hit the next known header
-                    skippingWhere = false
-                }
+            // Treat bullet-ish lines and NOAA section headers as standalone lines.
+            // This keeps lists readable while still fixing mid-sentence wraps.
+            let isBulletLine = t.hasPrefix("*") || t.hasPrefix("•") || t.hasPrefix("-")
+            let isHeaderLine = upper.hasSuffix("...") && upper == upper
 
-                // Keep WHAT/WHEN/IMPACTS headers in-line (but without bullets)
-                // Example: "WHAT...Cold..." stays as one paragraph.
-                currentLines.append(line)
+            // Conservatively drop WHERE blocks (often redundant in the detail view)
+            if upper.hasPrefix("WHERE...") || upper.hasPrefix("* WHERE...") {
                 continue
             }
 
-            // If we are inside WHERE, drop ALL lines until next header
-            if skippingWhere {
+            if isBulletLine || isHeaderLine {
+                flushParagraph()
+                out.append(t)
                 continue
             }
 
-            currentLines.append(line)
+            // Normal prose: join hard-wrapped lines into a single paragraph.
+            if currentParagraph.isEmpty {
+                currentParagraph = t
+            } else {
+                currentParagraph += " " + t
+            }
         }
 
-        flush()
+        flushParagraph()
 
-        // Final cleanup: collapse repeated spaces
-        let cleaned = outBlocks
-            .map { $0.replacingOccurrences(of: #"[\t ]+"#, with: " ", options: .regularExpression) }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        // Trim any trailing blank line
+        while out.last == "" { out.removeLast() }
 
-        return cleaned.joined(separator: "\n\n")
+        return out.joined(separator: "\n")
     }
     
     private func openAlertDetail(_ alert: NWSAlertsResponse.Feature) {
@@ -1391,8 +1390,14 @@ struct ContentView: View {
 
         let description: String? = {
             guard let desc = p.descriptionText, !desc.isEmpty else { return nil }
-            let formatted = normalizeParagraphNewlines(formatNOAAAlertBody(desc))
-            return formatted.isEmpty ? nil : formatted
+
+            // Rollback: keep NOAA narrative formatting; only normalize line endings.
+            let cleaned = formatNOAAAlertBody(desc)
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            return cleaned.isEmpty ? nil : cleaned
         }()
 
         let instructions: [String] = {
@@ -1565,10 +1570,13 @@ private func parseAlertNarrativeSections(from text: String) -> [AlertNarrativeSe
 
     // labels you care about (add more if you want)
     let labels = ["WHAT", "WHEN", "IMPACTS", "ADDITIONAL DETAILS", "PRECAUTIONARY/PREPAREDNESS ACTIONS"]
+    // Intentionally unused (rollback to the warning state per request)
     let labelPattern = labels.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
 
+    let labelRegex = labels.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+
     // Match: LABEL... body (until next LABEL... or end)
-    let pattern = #"(?s)(?:^|\n)\s*(\(labelPattern))\s*\.{3}\s*(.*?)(?=(?:\n\s*(?:\(labelPattern))\s*\.{3})|\z)"#
+    let pattern = #"(?s)(?:^|\n)\s*(\#(labelRegex))\s*\.{3}\s*(.*?)(?=(?:\n\s*(?:\#(labelRegex))\s*\.{3})|\z)"#
 
     guard let re = try? NSRegularExpression(pattern: pattern, options: []) else {
         return [AlertNarrativeSection(label: nil, body: normalized)]
@@ -1836,13 +1844,20 @@ private struct LocationsSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
-                                searchVM.query = ""
-                                searchVM.results = []
-                                searchFocused = false
-                                showingLocations = false
-                            }
+                        Button("Done") {
+                            searchVM.query = ""
+                            searchVM.results = []
+                            searchFocused = false
+                            showingLocations = false
                         }
+                        .buttonStyle(.plain)
+                        .font(.headline.weight(.semibold))        // ⬆️ slightly larger to match Radar
+                        .foregroundStyle(Color.white)             // ⬆️ brighter / whiter like Radar
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.thinMaterial)
+                        .clipShape(Capsule())
+                    }
                 }
             // Nav bar glass + readable title (Daily Forecast style)
 //            .toolbarBackground(.visible, for: .navigationBar)

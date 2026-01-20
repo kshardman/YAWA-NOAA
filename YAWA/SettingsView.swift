@@ -12,7 +12,7 @@ import UserNotifications
 struct SettingsView: View {
     @AppStorage("pwsStationID") private var stationID: String = ""
     @AppStorage("pwsApiKey") private var apiKey: String = ""
-    
+
     @AppStorage("weatherApiKey") private var weatherApiKey: String = ""
 
     // One-time defaults from bundled config.plist (optional)
@@ -59,17 +59,23 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            // Nav bar glass + readable title (Daily Forecast style)
+            // Nav bar glass + readable title (Radar style)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(YAWATheme.card2, for: .navigationBar)   // ✅ tint like Daily Forecast
-            .toolbarColorScheme(.dark, for: .navigationBar) 
-            
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    ToolbarIconButton("xmark", tint: YAWATheme.textSecondary) {
-                            dismiss()
-                        }
+                    Button("Done") {
+                        dismiss()
                     }
+                    .buttonStyle(.plain)
+                    .font(.headline.weight(.semibold))   // ⬆️ match Favorites/Radar size
+                    .foregroundStyle(Color.white)        // ⬆️ match Favorites/Radar whiteness
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.thinMaterial)
+                    .clipShape(Capsule())
+                }
             }
             .task {
                 await notifications.refreshAuthorizationStatus()
@@ -109,9 +115,10 @@ private extension SettingsView {
         Section {
             Toggle(isOn: $notifications.alertsNotificationsEnabled) {
                 Text("Weather alert notifications")
-                    .foregroundStyle(YAWATheme.textPrimary) // ← white
+                    .foregroundStyle(YAWATheme.textPrimary)
             }
             .tint(.green)
+
             HStack {
                 Text("System permission")
                     .foregroundStyle(YAWATheme.textPrimary)
@@ -133,13 +140,11 @@ private extension SettingsView {
                 }
                 .foregroundStyle(YAWATheme.textPrimary)
             }
-        }
-        header: {
+        } header: {
             Text("Alerts")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(YAWATheme.textPrimary)   // ← THIS is the fix
-        }
-        footer: {
+                .foregroundStyle(YAWATheme.textPrimary)
+        } footer: {
             Text("Get notified when NOAA issues a new alert for the location you’re viewing. Alerts are sent once per unique alert ID.")
                 .foregroundStyle(YAWATheme.textSecondary)
         }
@@ -216,7 +221,6 @@ private extension SettingsView {
                 .buttonStyle(.bordered)
                 .tint(YAWATheme.accent)
 
-
                 LabeledContent("WeatherAPI Key") {
                     Group {
                         if showWeatherApiKey {
@@ -278,7 +282,7 @@ private extension SettingsView {
             Text("Attribution")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(YAWATheme.textPrimary)
-                .textCase(nil) // prevent automatic ALL CAPS
+                .textCase(nil)
         }
         .listRowBackground(YAWATheme.card2)
         .listRowSeparator(.hidden)
