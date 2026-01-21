@@ -362,19 +362,36 @@ struct ContentView: View {
     }
 
     private var mainStack: some View {
-        VStack(spacing: 18) {
-            headerSection
-                .padding(.top, 8)
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 18) {
+                headerSection
+                    .padding(.top, 8)
 
-            tilesSection
+                tilesSection
 
-            forecastSection
+                forecastSection
 
-            if showEasterEgg {
-                easterEggOverlay
+                if showEasterEgg {
+                    easterEggOverlay
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
         }
-        .padding(.horizontal, 16)   // ✅ KEY CHANGE
+        .refreshable {
+            isManualRefreshing = true
+            defer { isManualRefreshing = false }
+
+            // In GPS mode, proactively ask for a fresh fix before refreshing.
+            if selection.selectedFavorite == nil && source != .pws {
+                locationManager.request()
+            }
+
+            await refreshNow()
+            if source == .noaa { await refreshForecastNow() }
+
+            successHaptic()
+        }
     }
 
     private var forecastSection: some View {
@@ -385,33 +402,16 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
 
             if source == .noaa {
-                ScrollView(showsIndicators: true) {
-                    inlineForecastSection
-                        .padding(.bottom, 12)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(maxHeight: .infinity)
-                .refreshable {
-                    isManualRefreshing = true
-                    defer { isManualRefreshing = false }
-
-                    await refreshNow()
-                    await refreshForecastNow()
-
-                    successHaptic()
-                }
+                inlineForecastSection
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity)
             } else {
-                ScrollView(showsIndicators: true) {
-                    weatherApiForecastCard
-                        .padding(.bottom, 12)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(maxHeight: .infinity)
+                weatherApiForecastCard
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity)
             }
         }
-//        .padding(.horizontal, 16)
         .padding(.top, 6)
-//        .padding(.bottom, 16)
     }
 
     private var easterEggOverlay: some View {
@@ -695,28 +695,40 @@ struct ContentView: View {
             }
 
             if viewModel.isStale {
-                pill("STALE", "clock.badge.exclamationmark")
-                    .contentShape(Capsule())
-                    .onTapGesture {
-                        Task {
-                            isManualRefreshing = true
-                            defer { isManualRefreshing = false }
+                Button {
+                    Task {
+                        isManualRefreshing = true
+                        defer { isManualRefreshing = false }
 
-                            await refreshNow()
-                            if source == .noaa { await refreshForecastNow() }
+                        await refreshNow()
+                        if source == .noaa { await refreshForecastNow() }
 
-                            successHaptic()
-                        }
+                        successHaptic()
                     }
-                    .opacity(0.95)
-                    .padding(.trailing, 18)
-                    .overlay(
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.badge.exclamationmark")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.secondary)
+
+                        Text("STALE")
+                            .foregroundStyle(.secondary)
+
+                        // ✅ guaranteed breathing room before the refresh glyph
+                        Spacer(minLength: 6)
+
                         Image(systemName: "arrow.clockwise")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(YAWATheme.textSecondary.opacity(0.8))
-                            .padding(.trailing, 10),
-                        alignment: .trailing
-                    )
+                    }
+                    .font(.caption)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .opacity(0.95)
             }
         }
     }
