@@ -244,7 +244,7 @@ final class WeatherViewModel: ObservableObject {
 //    @MainActor
     @MainActor
     func fetchCurrentFromNOAA(lat: Double, lon: Double, locationName: String? = nil) async {
-        print("🛰️ NOAA current conditions lookup → lat=\(lat), lon=\(lon), locationName=\(locationName ?? "nil")")
+//        print("🛰️ NOAA current conditions lookup → lat=\(lat), lon=\(lon), locationName=\(locationName ?? "nil")")
         do {
             let result = try await noaaCurrent.fetchLatestObservation(lat: lat, lon: lon)
             noaaStationID = result.stationId

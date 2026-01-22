@@ -13,7 +13,7 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
     private let smooth: Int
     private let snow: Int
 
-    /// Max zoom RainViewer supports (you said 7).
+    /// Max zoom RainViewer supports.
     private let providerMaxZoom: Int
 
     private(set) var lastRequestedZoom: Int = 0
@@ -84,6 +84,9 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
     // MARK: - MKTileOverlay
 
     override func loadTile(at path: MKTileOverlayPath, result: @escaping (Data?, Error?) -> Void) {
+        // Debug: show what MapKit is requesting
+        // print("🌧 loadTile z=\(path.z) x=\(path.x) y=\(path.y) scale=\(path.contentScaleFactor)")
+
         lastRequestedZoom = path.z
 
         // Decide pixel size to request (256 for 1x, 512 for 2x/3x)
@@ -133,10 +136,6 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
         let subX = path.x & mask
         let subY = path.y & mask
 
-        if !firstTileSent {
-//            print("✅ loadTile FIRST: req z=\(path.z) x=\(path.x) y=\(path.y) scale=\(path.contentScaleFactor) -> parent z=\(parentZ) x=\(parentX) y=\(parentY) sub=\(subX),\(subY) px=\(pixelSize.rawValue)")
-        }
-
         fetchProviderTile(pixelSize: pixelSize, z: parentZ, x: parentX, y: parentY) { data, error in
             guard let data, error == nil else {
                 self.finish(key: outKey as String, data: nil, error: error)
@@ -181,6 +180,9 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
         }
 
         let urlString = "\(host)\(framePath)/\(pixelSize.rawValue)/\(z)/\(x)/\(y)/\(colorScheme)/\(smooth)_\(snow).png"
+        // Debug: show the exact URL being fetched
+//        print("🧱 tile url: \(urlString)")
+
         guard let url = URL(string: urlString) else {
             finish(key: key as String, data: nil, error: URLError(.badURL))
             return
@@ -191,7 +193,7 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
 
         let task = session.dataTask(with: req) { data, resp, error in
             if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
- //               print("❌ Tile HTTP \(http.statusCode) url=\(urlString)")
+                // print("❌ Tile HTTP \(http.statusCode) url=\(urlString)")
             }
 
             if let data = data as NSData? {

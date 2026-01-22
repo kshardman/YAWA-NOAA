@@ -37,14 +37,12 @@ struct RadarView: View {
 
                     RadarMapView(
                         center: CLLocationCoordinate2D(latitude: target.latitude, longitude: target.longitude),
-                        initialRadiusMeters: initialRadiusMeters,
+                        radiusMeters: initialRadiusMeters,
                         overlay: .init(
                             host: host,
                             framePath: frame.path,
                             opacity: 0.7
-                        ),
-                        animateTransition: didStartPlayback
-  //                      animateTransition: isPlaying
+                        )
                     )
                     .ignoresSafeArea(edges: .bottom)
 
@@ -96,7 +94,6 @@ struct RadarView: View {
             }
 
             .task {
-//                print("RadarView instance:", instanceID)
                 guard !didLoadFrames else { return }
                 didLoadFrames = true
                 await loadFrames()
@@ -113,7 +110,6 @@ struct RadarView: View {
         errorText = nil
         defer { isLoading = false }
 
-//        print("loadFrames() CALLED", Date())
         
         do {
             let maps = try await service.fetchWeatherMaps()

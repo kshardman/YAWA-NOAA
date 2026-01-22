@@ -1121,7 +1121,7 @@ struct ContentView: View {
 
     private func refreshNow() async {
         if let f = selection.selectedFavorite {
-            print("🛰️ NOAA refresh → favorite \(f.displayName) lat=\(f.coordinate.latitude), lon=\(f.coordinate.longitude)")
+ //           print("🛰️ NOAA refresh → favorite \(f.displayName) lat=\(f.coordinate.latitude), lon=\(f.coordinate.longitude)")
             // Favorites always imply NOAA
             await viewModel.fetchCurrentFromNOAA(
                 lat: f.coordinate.latitude,
@@ -1134,7 +1134,7 @@ struct ContentView: View {
                 let lon = locationManager.coordinate?.longitude ?? -999
                 let name = locationManager.locationName ?? "unknown"
 
-                print("📍 Phone geolocation → \(name) lat=\(lat), lon=\(lon)")
+ //               print("📍 Phone geolocation → \(name) lat=\(lat), lon=\(lon)")
             
             // ✅ Clean architecture:
             // In current-location (GPS) mode, do NOT pass a locationName into the fetch.
