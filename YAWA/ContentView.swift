@@ -714,13 +714,12 @@ struct ContentView: View {
                         Text("STALE")
                             .foregroundStyle(.secondary)
 
-                        // ✅ guaranteed breathing room before the refresh glyph
-                        Spacer(minLength: 6)
-
                         Image(systemName: "arrow.clockwise")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(YAWATheme.textSecondary.opacity(0.8))
+                            .padding(.leading, 8)   // breathing room
                     }
+                    .fixedSize(horizontal: true, vertical: false) // ✅ prevents full-width expansion
                     .font(.caption)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -739,7 +738,7 @@ struct ContentView: View {
             // Left column: wind + humidity
             VStack(spacing: 14) {
                 miniTile("wind", .teal, viewModel.windDisplay)
-                miniTile("drop", .blue, viewModel.humidity)
+                miniTile("humidity.fill", .blue, viewModel.humidity)
             }
             .frame(maxWidth: .infinity)
 
