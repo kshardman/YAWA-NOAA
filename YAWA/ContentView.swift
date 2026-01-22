@@ -768,7 +768,7 @@ struct ContentView: View {
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(YAWATheme.textSecondary)
                     
-                    Text("Station Forecast (WeatherAPI)")
+                    Text("Station Forecast (from WeatherAPI)")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(YAWATheme.textPrimary)
                     
@@ -1128,16 +1128,6 @@ struct ContentView: View {
                 locationName: f.displayName
             )
         } else {
-            
-            let lat = locationManager.coordinate?.latitude ?? -999
-                let lon = locationManager.coordinate?.longitude ?? -999
-                let name = locationManager.locationName ?? "unknown"
-
- //               print("📍 Phone geolocation → \(name) lat=\(lat), lon=\(lon)")
-            
-            // ✅ Clean architecture:
-            // In current-location (GPS) mode, do NOT pass a locationName into the fetch.
-            // LocationManager's reverse geocode owns the header label, preventing stale “snap back”.
             await viewModel.refreshCurrentConditions(
                 source: source,
                 coord: locationManager.coordinate,
@@ -1643,25 +1633,29 @@ private struct InlineAlertRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            let sevColor = colorForSeverity(alert.properties.severity)
+
             Image(systemName: symbolForSeverity(alert.properties.severity))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(YAWATheme.alertIcon)   // 👈 was .orange
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, sevColor)
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 26, height: 26, alignment: .center)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(alert.properties.event)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(YAWATheme.textPrimary)   // 👈 add this
+                    .foregroundStyle(YAWATheme.textPrimary)
                     .lineLimit(1)
 
                 if let headline = alert.properties.headline, !headline.isEmpty {
                     Text(headline)
                         .font(.caption)
-                        .foregroundStyle(YAWATheme.textSecondary) // 👈 was .secondary
+                        .foregroundStyle(YAWATheme.textSecondary)
                         .lineLimit(2)
                 } else if let area = alert.properties.areaDesc, !area.isEmpty {
                     Text(area)
                         .font(.caption)
-                        .foregroundStyle(YAWATheme.textSecondary) // 👈 was .secondary
+                        .foregroundStyle(YAWATheme.textSecondary)
                         .lineLimit(2)
                 }
             }
@@ -1678,6 +1672,17 @@ private struct InlineAlertRow: View {
         default: return "info.circle.fill"
         }
     }
+
+    private func colorForSeverity(_ severity: String?) -> Color {
+        switch severity?.lowercased() {
+        case "extreme", "severe":
+            return Color.red.opacity(0.95)
+        case "moderate":
+            return Color.orange.opacity(0.9)
+        default:
+            return Color.secondary.opacity(0.8)
+        }
+    }
 }
 
 private struct LocationsSheet: View {
@@ -1690,6 +1695,7 @@ private struct LocationsSheet: View {
 
     @StateObject private var searchVM = CitySearchViewModel()
     @FocusState private var searchFocused: Bool
+    @State private var justAddedResultID: CitySearchViewModel.Result.ID? = nil
 
     var body: some View {
         NavigationStack {
@@ -1747,11 +1753,16 @@ private struct LocationsSheet: View {
 
                                 Spacer()
 
-                                Image(systemName: "star") // hollow = not yet a favorite
-                                    .foregroundStyle(YAWATheme.textSecondary)
+                                Image(systemName: (justAddedResultID == r.id) ? "star.fill" : "star")
+                                    .foregroundStyle((justAddedResultID == r.id) ? Color.yellow : YAWATheme.textSecondary)
+                                    .animation(.easeInOut(duration: 0.15), value: justAddedResultID)
                             }
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                // Visual feedback: briefly fill the star so the user sees the add
+                                justAddedResultID = r.id
+                                lightHaptic()
+
                                 if previousSourceRaw == nil { previousSourceRaw = sourceRaw }
                                 sourceRaw = CurrentConditionsSource.noaa.rawValue
 
@@ -1765,10 +1776,14 @@ private struct LocationsSheet: View {
                                 favorites.add(f)
                                 selection.selectedFavorite = f
 
-                                searchVM.query = ""
-                                searchVM.results = []
-                                searchFocused = false
-                                showingLocations = false
+                                // Give the star-fill a brief moment to render, then dismiss
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                                    justAddedResultID = nil
+                                    searchVM.query = ""
+                                    searchVM.results = []
+                                    searchFocused = false
+                                    showingLocations = false
+                                }
                             }
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                             .listRowBackground(YAWATheme.card2)

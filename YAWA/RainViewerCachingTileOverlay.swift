@@ -14,7 +14,7 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
     private let snow: Int
 
     /// Max zoom RainViewer supports.
-    private let providerMaxZoom: Int
+    let providerMaxZoom: Int
 
     private(set) var lastRequestedZoom: Int = 0
 
@@ -45,7 +45,7 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
         colorScheme: Int = 2,
         smooth: Bool = true,
         snow: Bool = false,
-        maxZoom: Int = 7
+        maxZoom: Int = 12
     ) {
         self.host = host
         self.framePath = framePath
@@ -63,14 +63,15 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
 
         super.init(urlTemplate: nil)
 
-        // Let MapKit request whatever zoom it wants; we’ll overzoom for z > providerMaxZoom.
+        // Let MapKit request whatever zoom it wants *up to providerMaxZoom*.
+        // Beyond that, MapKit will scale providerMaxZoom tiles instead of requesting higher-z tiles.
         self.minimumZ = 0
-        self.maximumZ = 19
+        self.maximumZ = providerMaxZoom
 
         self.isGeometryFlipped = false
         self.canReplaceMapContent = false
 
-        // KEY FIX: MKTileOverlay.tileSize is in *points*.
+        // MKTileOverlay.tileSize is in *points*.
         // Keep it 256pt so MapKit uses a normal tile grid.
         self.tileSize = CGSize(width: 256, height: 256)
     }
@@ -84,9 +85,6 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
     // MARK: - MKTileOverlay
 
     override func loadTile(at path: MKTileOverlayPath, result: @escaping (Data?, Error?) -> Void) {
-        // Debug: show what MapKit is requesting
-        // print("🌧 loadTile z=\(path.z) x=\(path.x) y=\(path.y) scale=\(path.contentScaleFactor)")
-
         lastRequestedZoom = path.z
 
         // Decide pixel size to request (256 for 1x, 512 for 2x/3x)
@@ -180,8 +178,6 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
         }
 
         let urlString = "\(host)\(framePath)/\(pixelSize.rawValue)/\(z)/\(x)/\(y)/\(colorScheme)/\(smooth)_\(snow).png"
-        // Debug: show the exact URL being fetched
-//        print("🧱 tile url: \(urlString)")
 
         guard let url = URL(string: urlString) else {
             finish(key: key as String, data: nil, error: URLError(.badURL))
@@ -192,14 +188,9 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
         req.cachePolicy = .returnCacheDataElseLoad
 
         let task = session.dataTask(with: req) { data, resp, error in
-            if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                // print("❌ Tile HTTP \(http.statusCode) url=\(urlString)")
-            }
-
             if let data = data as NSData? {
                 Self.memCache.setObject(data, forKey: key, cost: data.length)
             }
-
             self.finish(key: key as String, data: data, error: error)
         }
         task.resume()
