@@ -396,10 +396,10 @@ struct ContentView: View {
 
     private var forecastSection: some View {
         Group {
-            Text("Daily Forecast")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(YAWATheme.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .center)
+//            Text("Daily Forecast")
+//                .font(.title3.weight(.semibold))
+//                .foregroundStyle(YAWATheme.textPrimary)
+//                .frame(maxWidth: .infinity, alignment: .center)
 
             if source == .noaa {
                 inlineForecastSection
@@ -876,12 +876,19 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 9) { // was 12
 
             // Header row (centered title + spinner on right)
-            ZStack {
-                HStack {
-                    Spacer()
-                    if forecastVM.isLoading && forecastVM.periods.isEmpty {
-                        ProgressView().controlSize(.small)
-                    }
+            HStack(spacing: 8) {
+                Image(systemName: "calendar")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.textSecondary)
+
+                Text("Daily Forecast")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(YAWATheme.textPrimary)
+
+                Spacer()
+
+                if forecastVM.isLoading && forecastVM.periods.isEmpty {
+                    ProgressView().controlSize(.small)
                 }
             }
 
