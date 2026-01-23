@@ -362,57 +362,95 @@ struct ContentView: View {
     }
 
     private var mainStack: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 18) {
-                headerSection
-                    .padding(.top, 8)
+        VStack(spacing: 18) {
+            headerSection
+                .padding(.top, 8)
 
-                tilesSection
+            tilesSection
 
-                forecastSection
+            forecastSection
 
-                if showEasterEgg {
-                    easterEggOverlay
-                }
+            if showEasterEgg {
+                easterEggOverlay
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
         }
-        .refreshable {
-            isManualRefreshing = true
-            defer { isManualRefreshing = false }
-
-            // In GPS mode, proactively ask for a fresh fix before refreshing.
-            if selection.selectedFavorite == nil && source != .pws {
-                locationManager.request()
-            }
-
-            await refreshNow()
-            if source == .noaa { await refreshForecastNow() }
-
-            successHaptic()
-        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+//    private var forecastSection: some View {
+//        Group {
+////            Text("Daily Forecast")
+////                .font(.title3.weight(.semibold))
+////                .foregroundStyle(YAWATheme.textPrimary)
+////                .frame(maxWidth: .infinity, alignment: .center)
+//
+//            if source == .noaa {
+//                inlineForecastSection
+//                    .padding(.bottom, 12)
+//                    .frame(maxWidth: .infinity)
+//            } else {
+//                weatherApiForecastCard
+//                    .padding(.bottom, 12)
+//                    .frame(maxWidth: .infinity)
+//            }
+//        }
+//        .padding(.top, 6)
+//    }
+    
     private var forecastSection: some View {
         Group {
-//            Text("Daily Forecast")
-//                .font(.title3.weight(.semibold))
-//                .foregroundStyle(YAWATheme.textPrimary)
-//                .frame(maxWidth: .infinity, alignment: .center)
-
             if source == .noaa {
-                inlineForecastSection
-                    .padding(.bottom, 12)
-                    .frame(maxWidth: .infinity)
+                ScrollView(showsIndicators: false) {
+                    inlineForecastSection
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity)
+                }
+                // ✅ This is the only scrolling region; it takes the remaining height.
+                .frame(maxWidth: .infinity)
+                .frame(maxHeight: .infinity)
+                .layoutPriority(1)
+                .refreshable {
+                    isManualRefreshing = true
+                    defer { isManualRefreshing = false }
+
+                    // In GPS mode, proactively ask for a fresh fix before refreshing.
+                    if selection.selectedFavorite == nil && source != .pws {
+                        locationManager.request()
+                    }
+
+                    await refreshNow()
+                    await refreshForecastNow()
+
+                    successHaptic()
+                }
+
             } else {
-                weatherApiForecastCard
-                    .padding(.bottom, 12)
-                    .frame(maxWidth: .infinity)
+                // PWS / WeatherAPI forecast: keep it in a scroll container too
+                // so the overall screen doesn’t need to scroll.
+                ScrollView(showsIndicators: false) {
+                    weatherApiForecastCard
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(maxHeight: .infinity)
+                .layoutPriority(1)
+                .refreshable {
+                    isManualRefreshing = true
+                    defer { isManualRefreshing = false }
+
+                    await refreshNow()
+                    // (WeatherAPI card loads via .task(id: weatherApiCoordKey))
+                    successHaptic()
+                }
             }
         }
         .padding(.top, 6)
     }
+    
+    
 
     private var easterEggOverlay: some View {
         VStack {
@@ -655,81 +693,100 @@ struct ContentView: View {
     // MARK: - Sections
 
     private var headerSection: some View {
-        VStack(spacing: 10) {
-            VStack(spacing: 4) {
-                Text("Current Conditions")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(YAWATheme.textPrimary)
+        VStack(alignment: .leading, spacing: 10) {
 
-                if !headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    HStack(spacing: 6) {
-                        Text(headerLocationText)
-                            .font(.subheadline)
-                            .foregroundStyle(YAWATheme.textSecondary)
+            // Row 1: icon + title (left), location (right)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(YAWATheme.textSecondary)
 
-                        if showCurrentLocationGlyph {
-                            Image(systemName: "location.circle")
-                                .imageScale(.small)
-                                .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
-                        }
-                    }
-                } else {
-                    Text("Current Location")
+                    Text("Current Conditions")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(YAWATheme.textPrimary)
+                }
+                .layoutPriority(1) // keep title readable
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    let loc = headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    Text(loc.isEmpty ? "Current Location" : loc)
                         .font(.subheadline)
                         .foregroundStyle(YAWATheme.textSecondary)
-                }
+                        .lineLimit(1)
+                        .truncationMode(.tail)
 
-                if source == .pws, !viewModel.pwsLabel.isEmpty {
-                    Text("\(viewModel.pwsLabel) • PWS")
-                        .font(.caption)
-                        .foregroundStyle(YAWATheme.textTertiary)
-                }
-            }
-
-            if !networkMonitor.isOnline {
-                pill("Offline — showing last update", "wifi.slash")
-            }
-
-            if let msg = viewModel.errorMessage {
-                pill(msg, "exclamationmark.triangle.fill")
-            }
-
-            if viewModel.isStale {
-                Button {
-                    Task {
-                        isManualRefreshing = true
-                        defer { isManualRefreshing = false }
-
-                        await refreshNow()
-                        if source == .noaa { await refreshForecastNow() }
-
-                        successHaptic()
+                    if showCurrentLocationGlyph {
+                        Image(systemName: "location.circle")
+                            .imageScale(.small)
+                            .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
                     }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "clock.badge.exclamationmark")
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.secondary)
+                }
+                .layoutPriority(0) // let this truncate first
+            }
 
-                        Text("STALE")
-                            .foregroundStyle(.secondary)
-
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(YAWATheme.textSecondary.opacity(0.8))
-                            .padding(.leading, 8)   // breathing room
-                    }
-                    .fixedSize(horizontal: true, vertical: false) // ✅ prevents full-width expansion
+            // Row 2: PWS label (optional)
+            if source == .pws, !viewModel.pwsLabel.isEmpty {
+                Text("\(viewModel.pwsLabel) • PWS")
                     .font(.caption)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.thinMaterial)
-                    .clipShape(Capsule())
+                    .foregroundStyle(YAWATheme.textTertiary)
+            }
+
+            // Row 3+: pills stack vertically (prevents crowding)
+            VStack(alignment: .leading, spacing: 8) {
+
+                if !networkMonitor.isOnline {
+                    pill("Offline — showing last update", "wifi.slash")
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(.plain)
-                .opacity(0.95)
+
+                if let msg = viewModel.errorMessage {
+                    pill(msg, "exclamationmark.triangle.fill")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if viewModel.isStale {
+                    Button {
+                        Task {
+                            isManualRefreshing = true
+                            defer { isManualRefreshing = false }
+
+                            await refreshNow()
+                            if source == .noaa { await refreshForecastNow() }
+
+                            successHaptic()
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "clock.badge.exclamationmark")
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(.secondary)
+
+                            Text("STALE")
+                                .foregroundStyle(.secondary)
+
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(YAWATheme.textSecondary.opacity(0.8))
+                                .padding(.leading, 8)   // breathing room
+                        }
+                        .fixedSize(horizontal: true, vertical: false) // ✅ prevents full-width expansion
+                        .font(.caption)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.thinMaterial)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(0.95)
+                }
             }
         }
+        .padding(14)
+        .background(YAWATheme.card2)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private var tilesSection: some View {
