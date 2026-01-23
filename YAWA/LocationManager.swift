@@ -730,7 +730,19 @@ final class WeatherAPIForecastViewModel: ObservableObject {
         do {
             let forecastDays = try await service.fetchForecast(lat: coord.latitude, lon: coord.longitude, apiKey: key)
 
-            days = forecastDays.map { fd in
+            // Build raw rows first (WeatherAPI lows are calendar-day lows)
+            struct RawDay {
+                let id: String
+                let weekday: String
+                let dateText: String
+                let conditionText: String
+                let hiF: Int
+                let loF: Int
+                let chanceRain: Int?
+                let hourlyLines: [String]
+            }
+
+            let raw: [RawDay] = forecastDays.map { fd in
                 // 1️⃣ date / labels
                 let date = fd.date
                 let weekday: String
@@ -743,7 +755,7 @@ final class WeatherAPIForecastViewModel: ObservableObject {
                     dateText = ""
                 }
 
-                // 2️⃣ hi / lo
+                // 2️⃣ hi / lo (calendar-day hi/lo)
                 let hi = Int(fd.day.maxtemp_f.rounded())
                 let lo = Int(fd.day.mintemp_f.rounded())
 
@@ -764,24 +776,7 @@ final class WeatherAPIForecastViewModel: ObservableObject {
                     hourLine("Evening", evening)
                 ].compactMap { $0 }
 
-                // 6️⃣ ✅ BUILD detailText HERE
-                var lines: [String] = []
-                lines.append(fd.day.condition.text)
-                lines.append("High \(hi)° / Low \(lo)°")
-
-                if let chance {
-                    lines.append("Chance of rain: \(chance)%")
-                }
-
-                if !hourlyLines.isEmpty {
-                    lines.append("")                // blank line for readability
-                    lines.append(contentsOf: hourlyLines)
-                }
-
-                let detail = lines.joined(separator: "\n")
-
-                // 7️⃣ return DayRow
-                return DayRow(
+                return RawDay(
                     id: date,
                     weekday: weekday,
                     dateText: dateText,
@@ -789,6 +784,44 @@ final class WeatherAPIForecastViewModel: ObservableObject {
                     hiF: hi,
                     loF: lo,
                     chanceRain: chance,
+                    hourlyLines: hourlyLines
+                )
+            }
+
+            // Shift lows backward by one day to match NOAA-style "night low" presentation.
+            // WeatherAPI's `mintemp` is typically the early-morning low for that calendar date.
+            days = raw.enumerated().map { idx, r in
+                let shiftedLo: Int
+                if idx < raw.count - 1 {
+                    shiftedLo = raw[idx + 1].loF
+                } else {
+                    shiftedLo = r.loF
+                }
+
+                // Build detail text using the shifted low
+                var lines: [String] = []
+                lines.append(r.conditionText)
+                lines.append("High \(r.hiF)° / Low \(shiftedLo)°")
+
+                if let chance = r.chanceRain {
+                    lines.append("Chance of rain: \(chance)%")
+                }
+
+                if !r.hourlyLines.isEmpty {
+                    lines.append("")
+                    lines.append(contentsOf: r.hourlyLines)
+                }
+
+                let detail = lines.joined(separator: "\n")
+
+                return DayRow(
+                    id: r.id,
+                    weekday: r.weekday,
+                    dateText: r.dateText,
+                    conditionText: r.conditionText,
+                    hiF: r.hiF,
+                    loF: shiftedLo,
+                    chanceRain: r.chanceRain,
                     detailText: detail
                 )
             }

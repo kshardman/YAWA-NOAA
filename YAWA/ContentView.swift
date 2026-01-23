@@ -711,28 +711,37 @@ struct ContentView: View {
                 Spacer(minLength: 8)
 
                 HStack(spacing: 6) {
-                    let loc = headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    Text(loc.isEmpty ? "Current Location" : loc)
-                        .font(.subheadline)
-                        .foregroundStyle(YAWATheme.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    if source == .pws {
+                        let label = viewModel.pwsLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+                        Text(label.isEmpty ? "Personal Weather Station" : label)
+                            .font(.subheadline)
+                            .foregroundStyle(YAWATheme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    } else {
+                        let loc = headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        Text(loc.isEmpty ? "Current Location" : loc)
+                            .font(.subheadline)
+                            .foregroundStyle(YAWATheme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
 
-                    if showCurrentLocationGlyph {
-                        Image(systemName: "location.circle")
-                            .imageScale(.small)
-                            .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
+                        if showCurrentLocationGlyph {
+                            Image(systemName: "location.circle")
+                                .imageScale(.small)
+                                .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
+                        }
                     }
                 }
                 .layoutPriority(0) // let this truncate first
             }
 
-            // Row 2: PWS label (optional)
-            if source == .pws, !viewModel.pwsLabel.isEmpty {
-                Text("\(viewModel.pwsLabel) • PWS")
-                    .font(.caption)
-                    .foregroundStyle(YAWATheme.textTertiary)
-            }
+//            // Row 2: PWS label (optional)
+//            if source == .pws, !viewModel.pwsLabel.isEmpty {
+//                Text("\(viewModel.pwsLabel) • PWS")
+//                    .font(.caption)
+//                    .foregroundStyle(YAWATheme.textTertiary)
+//            }
 
             // Row 3+: pills stack vertically (prevents crowding)
             VStack(alignment: .leading, spacing: 8) {
