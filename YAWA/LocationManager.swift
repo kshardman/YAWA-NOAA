@@ -269,6 +269,10 @@ struct NWSAlertsResponse: Decodable {
         let descriptionText: String?
         let instructionText: String?
 
+        // ✅ NWS timestamps (RFC3339 / ISO8601)
+        let effective: String?
+        let sent: String?
+
         enum CodingKeys: String, CodingKey {
             case event
             case severity
@@ -276,6 +280,8 @@ struct NWSAlertsResponse: Decodable {
             case areaDesc
             case descriptionText = "description"
             case instructionText = "instruction"
+            case effective
+            case sent
         }
     }
 }

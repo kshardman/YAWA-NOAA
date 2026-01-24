@@ -132,8 +132,7 @@ struct ContentView: View {
 
     private enum DetailBody {
         case text(String)
-        case alert(description: String?, instructions: [String], severity: String?)
-//        case forecast(day: String?, night: String?, hourly: [WeatherAPIForecastViewModel.HourlyPoint])
+        case alert(description: String?, instructions: [String], severity: String?, issuedAt: Date?)
         case forecast(day: String?, night: String?, dayDate: Date?, hourly: [(date: Date, tempF: Double)])
     }
 
@@ -147,9 +146,9 @@ struct ContentView: View {
             self.body = .text(body)
         }
 
-        init(title: String, description: String?, instructions: [String], severity: String?) {
+        init(title: String, description: String?, instructions: [String], severity: String?, issuedAt: Date?) {
             self.title = title
-            self.body = .alert(description: description, instructions: instructions, severity: severity)
+            self.body = .alert(description: description, instructions: instructions, severity: severity, issuedAt: issuedAt)
         }
 
         init(
@@ -806,7 +805,28 @@ struct ContentView: View {
         .background(YAWATheme.card2)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
+    
+    private func parseNWSDate(_ s: String?) -> Date? {
+        guard let s, !s.isEmpty else { return nil }
 
+        // NWS timestamps are RFC3339 / ISO8601, sometimes with fractional seconds.
+        let f1 = ISO8601DateFormatter()
+        f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f1.date(from: s) { return d }
+
+        let f2 = ISO8601DateFormatter()
+        f2.formatOptions = [.withInternetDateTime]
+        return f2.date(from: s)
+    }
+
+    private func alertIssuedDateText(_ d: Date) -> String {
+        let df = DateFormatter()
+        df.locale = .current
+        df.timeZone = .current
+        df.setLocalizedDateFormatFromTemplate("MMM d") // e.g. "Jan 23"
+        return df.string(from: d)
+    }
+    
     private func alertSymbol(for severity: String?) -> String {
         switch severity?.lowercased() {
         case "extreme", "severe": return "exclamationmark.octagon.fill"
@@ -879,92 +899,107 @@ struct ContentView: View {
                             await noaaHourlyVM.loadIfNeeded(for: coord, day: dayDate)
                         }
 
-                    case .alert(let description, let instructions, let severity):
+                    case .alert(let description, let instructions, let severity, let issuedAt):
                         let sym = alertSymbol(for: severity)
                         let sevColor = alertColor(for: severity)
 
                         VStack(alignment: .leading, spacing: 12) {
-
-                            // Header row (matches Daily Forecast card vibe)
-                            HStack(spacing: 10) {
+                            // Header row (matches Forecast Details header placement)
+                            HStack(spacing: 8) {
                                 Image(systemName: sym)
                                     .symbolRenderingMode(.palette)
                                     .foregroundStyle(.white, sevColor)
                                     .font(.system(size: 18, weight: .semibold))
-                                    .frame(width: 26, height: 26, alignment: .center)
+                                    .frame(width: 22, height: 22, alignment: .center)
 
-                                Text(detail.title)
+                                Text(detail.title) // e.g. “Winter Storm Warning”
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(YAWATheme.textPrimary)
                                     .lineLimit(2)
 
                                 Spacer(minLength: 0)
+
+                                if let issuedAt {
+                                    Text(alertIssuedDateText(issuedAt)) // e.g. “Jan 24”
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(YAWATheme.textSecondary)
+                                        .lineLimit(1)
+                                }
                             }
 
                             Divider().opacity(0.35)
 
-                            if let description, !description.isEmpty {
-                                let sections = parseAlertNarrativeSections(from: description)
+                            // Body is a sub-card so the header sits on the darker sheet background
+                            VStack(alignment: .leading, spacing: 12) {
+                                if let description, !description.isEmpty {
+                                    let sections = parseAlertNarrativeSections(from: description)
 
-                                VStack(alignment: .leading, spacing: 12) {
-                                    ForEach(sections) { s in
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            if let label = s.label {
-                                                Text(label)
-                                                    .font(.headline)
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        ForEach(sections) { s in
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                if let label = s.label {
+                                                    Text(label)
+                                                        .font(.headline)
+                                                        .foregroundStyle(YAWATheme.textPrimary)
+                                                }
+
+                                                Text(s.body)
+                                                    .font(.callout)
                                                     .foregroundStyle(YAWATheme.textPrimary)
+                                                    .lineSpacing(6)
+                                                    .multilineTextAlignment(.leading)
+                                                    .textSelection(.enabled)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
                                             }
-
-                                            Text(s.body)
-                                                .font(.callout)
-                                                .foregroundStyle(YAWATheme.textPrimary)
-                                                .lineSpacing(6)
-                                                .multilineTextAlignment(.leading)
-                                                .textSelection(.enabled)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
                                         }
                                     }
                                 }
-                            }
 
-                            if !instructions.isEmpty {
-                                Text("What to do")
-                                    .font(.headline)
-                                    .foregroundStyle(YAWATheme.textPrimary)
-                                    .padding(.top, (description?.isEmpty ?? true) ? 0 : 4)
+                                if !instructions.isEmpty {
+                                    if description != nil {
+                                        Divider().opacity(0.25)
+                                    }
 
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(instructions, id: \.self) { item in
-                                        let cleaned = stripLeadingBullet(item)
+                                    Text("What to do")
+                                        .font(.headline)
+                                        .foregroundStyle(YAWATheme.textPrimary)
 
-                                        HStack(alignment: .top, spacing: 10) {
-                                            Text("•")
-                                                .font(.callout.weight(.semibold))
-                                                .foregroundStyle(YAWATheme.textPrimary)
-                                                .padding(.top, 1)
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        ForEach(instructions, id: \.self) { item in
+                                            let cleaned = stripLeadingBullet(item)
 
-                                            Text(cleaned)
-                                                .font(.callout)
-                                                .foregroundStyle(YAWATheme.textPrimary)
-                                                .lineSpacing(4)
-                                                .multilineTextAlignment(.leading)
-                                                .textSelection(.enabled)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                            HStack(alignment: .top, spacing: 10) {
+                                                Text("•")
+                                                    .font(.callout.weight(.semibold))
+                                                    .foregroundStyle(YAWATheme.textPrimary)
+                                                    .padding(.top, 1)
+
+                                                Text(cleaned)
+                                                    .font(.callout)
+                                                    .foregroundStyle(YAWATheme.textPrimary)
+                                                    .lineSpacing(4)
+                                                    .multilineTextAlignment(.leading)
+                                                    .textSelection(.enabled)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                            }
                                         }
                                     }
                                 }
-                            }
 
-                            if let severity, !severity.isEmpty {
-                                Divider().padding(.top, 6)
+                                if let severity, !severity.isEmpty {
+                                    Divider().padding(.top, 6)
 
-                                Text("Severity: \(severity)")
-                                    .font(.footnote)
-                                    .foregroundStyle(YAWATheme.textSecondary)
+                                    Text("Severity: \(severity)")
+                                        .font(.footnote)
+                                        .foregroundStyle(YAWATheme.textSecondary)
+                                }
                             }
+                            .padding(14)
+                            .background(YAWATheme.card)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                         }
                         .padding(14)
-                        .background(YAWATheme.card)
+                        .background(YAWATheme.card2)
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     }
                 }
@@ -1868,11 +1903,16 @@ struct ContentView: View {
             return parseInstructionItems(from: formattedInstr)
         }()
 
+
+        // Prefer `effective` if present; otherwise fall back to `sent`.
+        let issuedAt = parseNWSDate(p.effective) ?? parseNWSDate(p.sent)
+
         selectedDetail = DetailPayload(
             title: p.event,
             description: description,
             instructions: instructions,
-            severity: p.severity
+            severity: p.severity,
+            issuedAt: issuedAt
         )
     }
 
