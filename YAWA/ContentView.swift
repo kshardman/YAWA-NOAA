@@ -130,6 +130,7 @@ struct ContentView: View {
 
     private enum DetailBody {
         case text(String)
+        case forecast(day: String, night: String?)
         case alert(description: String?, instructions: [String], severity: String?)
     }
 
@@ -141,6 +142,11 @@ struct ContentView: View {
         init(title: String, body: String) {
             self.title = title
             self.body = .text(body)
+        }
+
+        init(title: String, day: String, night: String?) {
+            self.title = title
+            self.body = .forecast(day: day, night: night)
         }
 
         init(title: String, description: String?, instructions: [String], severity: String?) {
@@ -555,16 +561,137 @@ struct ContentView: View {
 
     // MARK: - Extracted sheets
 
-    private func alertDetailSheet(_ detail: DetailPayload) -> some View {
-        NavigationStack {
-            ZStack {
-                YAWATheme.card2
-                    .ignoresSafeArea()
+    private func splitDayNight(_ text: String) -> (day: String, night: String?) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        switch detail.body {
-                        case .text(let text):
+        // Look for the exact marker produced by our NOAA/WeatherAPI detail formatting.
+        if let r = t.range(of: "\n\nNight...\n") {
+            let dayPart = String(t[..<r.lowerBound])
+                .replacingOccurrences(of: "Day...\n", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let nightPart = String(t[r.upperBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            return (day: dayPart.isEmpty ? t : dayPart, night: nightPart.isEmpty ? nil : nightPart)
+        }
+
+        // Day-only; strip the Day label if present.
+        let dayOnly = t.replacingOccurrences(of: "Day...\n", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return (day: dayOnly.isEmpty ? t : dayOnly, night: nil)
+    }
+
+    private func forecastDetailCard(title: String, day: String, night: String?) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+
+            // Header row (matches Daily Forecast card vibe)
+            HStack(spacing: 8) {
+                Image(systemName: "calendar")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.textSecondary)
+
+                Text("Daily Forecast")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(YAWATheme.textPrimary)
+
+                Spacer()
+
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(YAWATheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Divider().opacity(0.35)
+
+            // Day sub-card
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sun.max.fill")
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(YAWATheme.textSecondary)
+
+                    Text("Day")
+                        .font(.headline)
+                        .foregroundStyle(YAWATheme.textPrimary)
+                }
+
+                Text(day)
+                    .font(.callout)
+                    .foregroundStyle(YAWATheme.textPrimary)
+                    .lineSpacing(6)
+                    .multilineTextAlignment(.leading)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+            .background(YAWATheme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            // Night sub-card (optional)
+            if let night, !night.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "moon.stars.fill")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(YAWATheme.textSecondary)
+
+                        Text("Night")
+                            .font(.headline)
+                            .foregroundStyle(YAWATheme.textPrimary)
+                    }
+
+                    Text(night)
+                        .font(.callout)
+                        .foregroundStyle(YAWATheme.textPrimary)
+                        .lineSpacing(6)
+                        .multilineTextAlignment(.leading)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(12)
+                .background(YAWATheme.card)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+        }
+        .padding(14)
+        .background(YAWATheme.card2)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func alertSymbol(for severity: String?) -> String {
+        switch severity?.lowercased() {
+        case "extreme", "severe": return "exclamationmark.octagon.fill"
+        case "moderate": return "exclamationmark.triangle.fill"
+        default: return "info.circle.fill"
+        }
+    }
+
+    private func alertColor(for severity: String?) -> Color {
+        switch severity?.lowercased() {
+        case "extreme", "severe":
+            return Color.red.opacity(0.95)
+        case "moderate":
+            return Color.orange.opacity(0.9)
+        default:
+            return Color.secondary.opacity(0.8)
+        }
+    }
+
+    private func alertDetailSheet(_ detail: DetailPayload) -> some View {
+        ZStack {
+            // Match the slightly lighter sheet background used elsewhere
+            YAWATheme.card2
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    switch detail.body {
+                    case .text(let text):
+                        VStack(alignment: .leading, spacing: 12) {
                             Text(text)
                                 .font(.callout)
                                 .foregroundStyle(YAWATheme.textPrimary)
@@ -572,8 +699,35 @@ struct ContentView: View {
                                 .multilineTextAlignment(.leading)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                        }
 
-                        case .alert(let description, let instructions, let severity):
+                    case .forecast(let day, let night):
+                        forecastDetailCard(title: detail.title, day: day, night: night)
+
+                    case .alert(let description, let instructions, let severity):
+                        let sym = alertSymbol(for: severity)
+                        let sevColor = alertColor(for: severity)
+
+                        VStack(alignment: .leading, spacing: 12) {
+
+                            // Header row (matches Daily Forecast card vibe)
+                            HStack(spacing: 10) {
+                                Image(systemName: sym)
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, sevColor)
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .frame(width: 26, height: 26, alignment: .center)
+
+                                Text(detail.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(YAWATheme.textPrimary)
+                                    .lineLimit(2)
+
+                                Spacer(minLength: 0)
+                            }
+
+                            Divider().opacity(0.35)
+
                             if let description, !description.isEmpty {
                                 let sections = parseAlertNarrativeSections(from: description)
 
@@ -634,24 +788,15 @@ struct ContentView: View {
                                     .foregroundStyle(YAWATheme.textSecondary)
                             }
                         }
-                    }
-                    .padding(16)
-                    .background(YAWATheme.card2)
-                }
-            }
-            .navigationTitle(detail.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        selectedDetail = nil
+                        .padding(14)
+                        .background(YAWATheme.card)
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     }
                 }
+                .padding(16)
+                .background(YAWATheme.card2)
             }
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-        } // end of navigation stack
+        }
         .background(YAWATheme.sky)
         .preferredColorScheme(.dark)
         .presentationDetents([.medium, .large])
@@ -901,9 +1046,11 @@ struct ContentView: View {
                             }
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                let parts = splitDayNight(d.detailText)
                                 selectedDetail = DetailPayload(
                                     title: "\(d.weekday) \(d.dateText)",
-                                    body: d.detailText
+                                    day: parts.day,
+                                    night: parts.night
                                 )
                             }
                             
@@ -931,7 +1078,7 @@ struct ContentView: View {
             .task(id: weatherApiCoordKey) {
                 guard let coord = effectiveWeatherApiCoordinate else { return }
                 
-                print("🌧️ WeatherAPI forecast lookup → lat=\(coord.latitude), lon=\(coord.longitude), source=\(source)")
+//                print("🌧️ WeatherAPI forecast lookup → lat=\(coord.latitude), lon=\(coord.longitude), source=\(source)")
                 
                 await weatherApiForecastViewModel.loadIfNeeded(for: coord)
             }
@@ -1056,24 +1203,14 @@ struct ContentView: View {
 
                         let nightText = (d.night?.detailedForecast ?? "")
                             .trimmingCharacters(in: .whitespacesAndNewlines)
+                        let normalizedNight = (nightText == dayText) ? "" : nightText
 
-                        var parts: [String] = []
-
-                        if !dayText.isEmpty {
-                            parts.append("Day...\n\(dayText)")
-                        }
-
-                        if !nightText.isEmpty, nightText != dayText {
-                            parts.append("Night...\n\(nightText)")
-                        }
-
-                        let description = parts.joined(separator: "\n\n")
+                        // parts/description code left for now (see instructions).
 
                         selectedDetail = DetailPayload(
                             title: "\(abbreviatedDayName(d.name)) \(d.dateText)",
-                            description: description.isEmpty ? nil : description,
-                            instructions: [],
-                            severity: nil
+                            day: dayText,
+                            night: normalizedNight.isEmpty ? nil : normalizedNight
                         )
                     }
 
