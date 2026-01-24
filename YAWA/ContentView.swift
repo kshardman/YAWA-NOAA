@@ -61,6 +61,7 @@ struct ContentView: View {
     @StateObject private var forecastVM = ForecastViewModel()
     @StateObject private var weatherApiForecastViewModel = WeatherAPIForecastViewModel()
     
+    @StateObject private var noaaHourlyVM = NOAAHourlyForecastViewModel()
     
     @State private var lastCurrentRefreshAt: Date? = nil
     @State private var lastForecastRefreshAt: Date? = nil
@@ -132,7 +133,8 @@ struct ContentView: View {
     private enum DetailBody {
         case text(String)
         case alert(description: String?, instructions: [String], severity: String?)
-        case forecast(day: String?, night: String?, hourly: [WeatherAPIForecastViewModel.HourlyPoint])
+//        case forecast(day: String?, night: String?, hourly: [WeatherAPIForecastViewModel.HourlyPoint])
+        case forecast(day: String?, night: String?, dayDate: Date?, hourly: [(date: Date, tempF: Double)])
     }
 
     private struct DetailPayload: Identifiable {
@@ -150,9 +152,20 @@ struct ContentView: View {
             self.body = .alert(description: description, instructions: instructions, severity: severity)
         }
 
-        init(title: String, day: String?, night: String?, hourly: [WeatherAPIForecastViewModel.HourlyPoint]) {
+        init(
+            title: String,
+            day: String?,
+            night: String?,
+            dayDate: Date?,
+            hourly: [(date: Date, tempF: Double)]
+        ) {
             self.title = title
-            self.body = .forecast(day: day, night: night, hourly: hourly)
+            self.body = .forecast(
+                day: day,
+                night: night,
+                dayDate: dayDate,
+                hourly: hourly
+            )
         }
     }
     
@@ -833,16 +846,38 @@ struct ContentView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
-                    case .forecast(let day, let night, let hourly):
+                    case .forecast(let day, let night, let dayDate, let hourly):
                         let safeDay = (day ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                         let safeNight = (night ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+                        // If the payload already includes hourly tuples (WeatherAPI), use them.
+                        // Otherwise (NOAA), pull cached tuples for the selected day.
+                        let resolvedHourly: [(date: Date, tempF: Double)] = !hourly.isEmpty
+                            ? hourly
+                            : (dayDate != nil ? noaaHourlyVM.hourlyTuples(for: dayDate!) : [])
 
                         forecastDetailCard(
                             title: detail.title,
                             day: safeDay,
                             night: safeNight.isEmpty ? nil : safeNight,
-                            hourly: hourly.map { (date: $0.date, tempF: $0.tempF) }
+                            hourly: resolvedHourly
                         )
+                        .task(id: dayDate) {
+                            // Kick off NOAA hourly loading on-demand for the tapped day.
+                            guard source == .noaa else { return }
+                            guard hourly.isEmpty else { return } // already have hourly
+                            guard let dayDate else { return }
+
+                            let coord: CLLocationCoordinate2D?
+                            if let fav = selection.selectedFavorite {
+                                coord = fav.coordinate
+                            } else {
+                                coord = locationManager.coordinate
+                            }
+                            guard let coord else { return }
+
+                            await noaaHourlyVM.loadIfNeeded(for: coord, day: dayDate)
+                        }
 
                     case .alert(let description, let instructions, let severity):
                         let sym = alertSymbol(for: severity)
@@ -1113,122 +1148,177 @@ struct ContentView: View {
         }
     }
 
-        private var weatherApiForecastCard: some View {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "calendar")
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(YAWATheme.textSecondary)
-                    
-                    Text("Station Forecast (from WeatherAPI)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(YAWATheme.textPrimary)
-                    
-                    Spacer()
-                }
-                
-                if weatherApiForecastViewModel.isLoading {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, alignment: .center)
-                } else if let err = weatherApiForecastViewModel.errorMessage {
-                    Text(err)
-                        .font(.subheadline)
-                        .foregroundStyle(YAWATheme.textSecondary)
-                } else if weatherApiForecastViewModel.days.isEmpty {
-                    Text("No forecast data.")
-                        .font(.subheadline)
-                        .foregroundStyle(YAWATheme.textSecondary)
-                } else {
-                    VStack(spacing: 10) {
-                        ForEach(Array(weatherApiForecastViewModel.days.enumerated()), id: \.element.id) { index, d in
-                            let (sym, color) = conditionsSymbolAndColor(for: d.conditionText, isNight: false)
-                            let popText = d.chanceRain.map { "\($0)%" }
+    // MARK: - WeatherAPI daily forecast card (broken into smaller subviews for compiler)
 
-                            HStack(spacing: 10) {
-                                // Left column (fixed)
-                                HStack(spacing: 4) {
-                                    Text(d.weekday)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(YAWATheme.textPrimary)
+    private var weatherApiForecastCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            weatherApiForecastHeader
+            weatherApiForecastBody
+            if source == .pws { weatherApiForecastFooter }
+        }
+        .padding(14)
+        .background(YAWATheme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .task(id: weatherApiCoordKey) {
+            guard let coord = effectiveWeatherApiCoordinate else { return }
+            await weatherApiForecastViewModel.loadIfNeeded(for: coord)
+        }
+    }
 
-                                    Text(d.dateText)
-                                        .font(.caption)
-                                        .foregroundStyle(YAWATheme.textSecondary)
-                                }
-                                .frame(width: sideCol, alignment: .leading)
+    private var weatherApiForecastHeader: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "calendar")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(YAWATheme.textSecondary)
 
-                                // Middle column (true center)
-                                VStack(spacing: 2) {
-                                    Image(systemName: sym)
-                                        .symbolRenderingMode(.hierarchical)
-                                        .foregroundStyle(color)
-                                        .font(.title3)
+            Text("Station Forecast (from WeatherAPI)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(YAWATheme.textPrimary)
 
-                                    Group {
-                                        if let popText {
-                                            Text(popText)
-                                        } else {
-                                            Text("00%").hidden() // keeps identical layout/baseline
-                                        }
-                                    }
-                                    .font(.caption2.weight(.semibold))
-                                    .monospacedDigit()
-                                    .foregroundStyle(YAWATheme.textSecondary)
-                                }
-                                .frame(height: 34, alignment: .center)
-                                .frame(maxWidth: .infinity, alignment: .center)
+            Spacer()
+        }
+    }
 
-                                // Right column (fixed)
-                                Text("H \(d.hiF)°  L \(d.loF)°")
-                                    .font(.subheadline.weight(.semibold))
-                                    .monospacedDigit()
-                                    .foregroundStyle(YAWATheme.textPrimary)
-                                    .frame(width: sideCol, alignment: .trailing)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                let parts = splitDayNight(d.detailText)
-
-                                // ✅ this is the key: use the tapped day’s id, not "primary"
-                                let hourly = weatherApiForecastViewModel.hourlyPoints(for: d.id)
-
-                                selectedDetail = DetailPayload(
-                                    title: "\(d.weekday) \(d.dateText)",
-                                    day: parts.day,
-                                    night: parts.night,
-                                    hourly: hourly
-                                )
-                            }
-
-                            if index < weatherApiForecastViewModel.days.count - 1 {
-                                Divider().opacity(0.5)
-                            }
-                        }
-                    }
-                }
-                if source == .pws {
-                    Divider()
-                        .opacity(0.25)
-                        .padding(.top, 6)
-                    
-                    Text("WeatherAPI rain chance may differ from NOAA PoP.")
-                        .font(.caption)
-                        .foregroundStyle(YAWATheme.textTertiary)
-                        .multilineTextAlignment(.leading)
-                        .padding(.top, 4)
-                }
-            }
-            .padding(14)
-            .background(YAWATheme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .task(id: weatherApiCoordKey) {
-                guard let coord = effectiveWeatherApiCoordinate else { return }
-                
-//                print("🌧️ WeatherAPI forecast lookup → lat=\(coord.latitude), lon=\(coord.longitude), source=\(source)")
-                
-                await weatherApiForecastViewModel.loadIfNeeded(for: coord)
+    @ViewBuilder
+    private var weatherApiForecastBody: some View {
+        if weatherApiForecastViewModel.isLoading {
+            ProgressView()
+                .frame(maxWidth: .infinity, alignment: .center)
+        } else if let err = weatherApiForecastViewModel.errorMessage {
+            Text(err)
+                .font(.subheadline)
+                .foregroundStyle(YAWATheme.textSecondary)
+        } else if weatherApiForecastViewModel.days.isEmpty {
+            Text("No forecast data.")
+                .font(.subheadline)
+                .foregroundStyle(YAWATheme.textSecondary)
+        } else {
+            VStack(spacing: 10) {
+                weatherApiForecastRows
             }
         }
+    }
+
+    private var weatherApiForecastRows: some View {
+        ForEach(Array(weatherApiForecastViewModel.days.enumerated()), id: \.element.id) { index, d in
+            WeatherAPIDayRow(
+                index: index,
+                weekday: d.weekday,
+                dateText: d.dateText,
+                conditionText: d.conditionText,
+                chanceRain: d.chanceRain,
+                hiF: d.hiF,
+                loF: d.loF,
+                isLast: index == weatherApiForecastViewModel.days.count - 1,
+                sideCol: sideCol,
+                onTap: {
+                    let parts = splitDayNight(d.detailText)
+                    let hourly = weatherApiForecastViewModel.hourlyPoints(for: d.id)
+
+                    selectedDetail = DetailPayload(
+                        title: "\(d.weekday) \(d.dateText)",
+                        day: parts.day,
+                        night: parts.night,
+                        dayDate: nil,
+                        hourly: hourly.map { (date: $0.date, tempF: $0.tempF) }
+                    )
+                }
+            )
+        }
+    }
+
+    private var weatherApiForecastFooter: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().opacity(0.25)
+
+            Text("WeatherAPI rain chance may differ from NOAA PoP.")
+                .font(.caption)
+                .foregroundStyle(YAWATheme.textTertiary)
+                .multilineTextAlignment(.leading)
+                .padding(.top, 4)
+        }
+        .padding(.top, 6)
+    }
+
+    // MARK: - Extracted row view (keeps type-checker happy)
+
+    private struct WeatherAPIDayRow: View {
+        let index: Int
+
+        // Decomposed fields (avoids depending on a nested type name)
+        let weekday: String
+        let dateText: String
+        let conditionText: String
+        let chanceRain: Int?
+        let hiF: Int
+        let loF: Int
+
+        let isLast: Bool
+        let sideCol: CGFloat
+        let onTap: () -> Void
+
+        var body: some View {
+            let (sym, color) = conditionsSymbolAndColor(for: conditionText, isNight: false)
+            let popText = chanceRain.map { "\($0)%" }
+
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    // Left column (fixed)
+                    HStack(spacing: 4) {
+                        Text(weekday)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(YAWATheme.textPrimary)
+
+                        Text(dateText)
+                            .font(.caption)
+                            .foregroundStyle(YAWATheme.textSecondary)
+                    }
+                    .frame(width: sideCol, alignment: .leading)
+
+                    // Middle column (true center)
+                    VStack(spacing: 2) {
+                        Image(systemName: sym)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(color)
+                            .font(.title3)
+
+                        Group {
+                            if let popText {
+                                Text(popText)
+                            } else {
+                                Text("00%").hidden() // keeps identical layout/baseline
+                            }
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(YAWATheme.textSecondary)
+                    }
+                    .frame(height: 34, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                    // Right column (fixed)
+                    Text("H \(hiF)°  L \(loF)°")
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(YAWATheme.textPrimary)
+                        .frame(width: sideCol, alignment: .trailing)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { onTap() }
+
+                if !isLast {
+                    Divider().opacity(0.5)
+                        .padding(.top, 10)
+                }
+            }
+        }
+
+        // NOTE: This relies on the same helper symbol mapping as your main view.
+        // We redeclare it here as a wrapper so the nested struct can call it.
+        private func conditionsSymbolAndColor(for text: String, isNight: Bool) -> (String, Color) {
+            ContentView.conditionsSymbolAndColorStatic(for: text, isNight: isNight)
+        }
+    }
 
         
         private var inlineForecastSection: some View {
@@ -1357,6 +1447,7 @@ struct ContentView: View {
                             title: "\(abbreviatedDayName(d.name)) \(d.dateText)",
                             day: dayText,
                             night: normalizedNight.isEmpty ? nil : normalizedNight,
+                            dayDate: d.startDate,
                             hourly: []
                         )
                     }
@@ -1910,6 +2001,172 @@ struct ContentView: View {
         .clipShape(Capsule())
     }
 
+    private func conditionsSymbolAndColor(for text: String, isNight: Bool) -> (symbol: String, color: Color) {
+        Self.conditionsSymbolAndColorStatic(for: text, isNight: isNight)
+    }
+    // Static bridge so nested views can reuse the same mapping without capturing `self`.
+    static func conditionsSymbolAndColorStatic(for text: String, isNight: Bool) -> (symbol: String, color: Color) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // Thunder
+        if t.contains("thunder") || t.contains("t-storm") || t.contains("tstorm") {
+            return ("cloud.bolt.rain.fill", .yellow)
+        }
+
+        // Snow / Ice
+        if t.contains("snow") || t.contains("sleet") || t.contains("freezing") || t.contains("ice") || t.contains("blizzard") {
+            return ("cloud.snow.fill", .cyan)
+        }
+
+        // Fog / Haze / Smoke
+        if t.contains("fog") || t.contains("haze") || t.contains("smoke") || t.contains("mist") {
+            return ("cloud.fog.fill", .gray)
+        }
+
+        // Rain / Drizzle / Showers
+        if t.contains("drizzle") {
+            return ("cloud.drizzle.fill", .blue)
+        }
+        if t.contains("rain") || t.contains("shower") {
+            return ("cloud.rain.fill", .blue)
+        }
+
+        // Wind
+        if t.contains("wind") || t.contains("breezy") || t.contains("gust") {
+            return ("wind", .teal)
+        }
+
+        // Cloudy / Overcast / Partly
+        if t.contains("overcast") || t.contains("cloudy") {
+            if isNight {
+                return ("cloud.moon.fill", .gray)
+            } else {
+                return ("cloud.fill", .gray)
+            }
+        }
+        if t.contains("partly") || t.contains("mostly") {
+            if isNight {
+                return ("cloud.moon.fill", .gray)
+            } else {
+                return ("cloud.sun.fill", .orange)
+            }
+        }
+
+        // Clear / Sunny
+        if t.contains("clear") || t.contains("sunny") {
+            if isNight {
+                return ("moon.stars.fill", .gray)
+            } else {
+                return ("sun.max.fill", .yellow)
+            }
+        }
+
+        // Fallback
+        return ("cloud.sun.fill", .gray)
+    }
+
+}
+
+@MainActor
+final class NOAAHourlyForecastViewModel: ObservableObject {
+
+    struct HourlyPeriod: Decodable {
+        let startTime: String
+        let temperature: Double
+        let temperatureUnit: String
+    }
+
+    struct HourlyForecastResponse: Decodable {
+        struct Properties: Decodable { let periods: [HourlyPeriod] }
+        let properties: Properties
+    }
+
+    struct PointsResponse: Decodable {
+        struct Properties: Decodable { let forecastHourly: String }
+        let properties: Properties
+    }
+
+    @Published private var hourlyByKey: [String: [(date: Date, tempF: Double)]] = [:]
+    private var loadingKeys: Set<String> = []
+
+    func hourlyTuples(for day: Date) -> [(date: Date, tempF: Double)] {
+        hourlyByKey[dayKey(day)] ?? []
+    }
+
+    func loadIfNeeded(for coord: CLLocationCoordinate2D, day: Date) async {
+        let k = dayKey(day)
+        guard hourlyByKey[k] == nil else { return }
+        guard !loadingKeys.contains(k) else { return }
+        loadingKeys.insert(k)
+        defer { loadingKeys.remove(k) }
+
+        do {
+            let hourlyURL = try await forecastHourlyURL(for: coord)
+            let points = try await fetchHourly(from: hourlyURL)
+
+            let cal = Calendar.current
+            let start = cal.startOfDay(for: day)
+            guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return }
+
+            let filtered = points
+                .filter { $0.date >= start && $0.date < end }
+                .sorted { $0.date < $1.date }
+
+            hourlyByKey[k] = filtered
+        } catch {
+            hourlyByKey[k] = []
+        }
+    }
+
+    private func dayKey(_ day: Date) -> String {
+        let cal = Calendar.current
+        let d = cal.startOfDay(for: day)
+        let f = DateFormatter()
+        f.locale = .current
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d)
+    }
+
+    private func forecastHourlyURL(for coord: CLLocationCoordinate2D) async throws -> URL {
+        let url = URL(string: "https://api.weather.gov/points/\(coord.latitude),\(coord.longitude)")!
+        var req = URLRequest(url: url)
+        req.setValue("YAWA", forHTTPHeaderField: "User-Agent")
+
+        let (data, _) = try await URLSession.shared.data(for: req)
+        let decoded = try JSONDecoder().decode(PointsResponse.self, from: data)
+
+        guard let u = URL(string: decoded.properties.forecastHourly) else {
+            throw URLError(.badURL)
+        }
+        return u
+    }
+
+    private func fetchHourly(from url: URL) async throws -> [(date: Date, tempF: Double)] {
+        var req = URLRequest(url: url)
+        req.setValue("YAWA", forHTTPHeaderField: "User-Agent")
+
+        let (data, _) = try await URLSession.shared.data(for: req)
+        let decoded = try JSONDecoder().decode(HourlyForecastResponse.self, from: data)
+
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+
+        func parse(_ s: String) -> Date? {
+            isoFrac.date(from: s) ?? iso.date(from: s)
+        }
+
+        return decoded.properties.periods.compactMap { p in
+            guard let d = parse(p.startTime) else { return nil }
+            let tf: Double = (p.temperatureUnit.uppercased() == "F")
+                ? p.temperature
+                : (p.temperature * 9.0 / 5.0) + 32.0
+            return (date: d, tempF: tf)
+        }
+    }
 }
 
 private struct AlertNarrativeSection: Identifiable {
