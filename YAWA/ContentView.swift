@@ -652,7 +652,7 @@ struct ContentView: View {
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(YAWATheme.textSecondary)
 
-                Text("Daily Forecast")
+                Text("Forecast Details")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(YAWATheme.textPrimary)
 
@@ -750,16 +750,25 @@ struct ContentView: View {
                     .chartXScale(domain: (hourly.first!.date)...(hourly.last!.date))
                     .chartYScale(domain: yMin...yMax)
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
+                        AxisMarks(values: .stride(by: .hour, count: 3)) { value in
                             AxisGridLine().foregroundStyle(YAWATheme.textSecondary.opacity(0.15))
                             AxisTick().foregroundStyle(YAWATheme.textSecondary.opacity(0.35))
-                            AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .abbreviated)))
-                                .foregroundStyle(YAWATheme.textSecondary)
-                                .font(.caption2)
+
+                            AxisValueLabel {
+                                if let d = value.as(Date.self) {
+                                    let hour = Calendar.current.component(.hour, from: d)
+                                    let hour12 = ((hour + 11) % 12) + 1          // 0→12, 13→1, etc.
+                                    let ap = (hour < 12) ? "A" : "P"
+                                    Text("\(hour12)\(ap)")
+                                }
+                            }
+                            .foregroundStyle(YAWATheme.textSecondary)
+                            .font(.caption2)
                         }
                     }
+                    .chartXAxisLabel("Time (\(title))", position: .bottom, alignment: .center)
                     .chartYAxis {
-                        let yValues = Array(stride(from: yMin, through: yMax, by: 10))
+                        let yValues = Array(stride(from: yMin, through: yMax, by: 5))
                         AxisMarks(values: yValues) { value in
                             AxisGridLine().foregroundStyle(YAWATheme.textSecondary.opacity(0.15))
                             AxisTick().foregroundStyle(YAWATheme.textSecondary.opacity(0.35))
@@ -772,7 +781,7 @@ struct ContentView: View {
                             .font(.caption2)
                         }
                     }
-                    .frame(height: 92)
+                    .frame(height: 138)
                     .padding(.top, 2)
                 }
                 .padding(12)
@@ -825,115 +834,15 @@ struct ContentView: View {
                         }
 
                     case .forecast(let day, let night, let hourly):
-                        VStack(alignment: .leading, spacing: 12) {
+                        let safeDay = (day ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        let safeNight = (night ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-                            if let day, !day.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "sun.max.fill")
-                                            .symbolRenderingMode(.hierarchical)
-                                            .foregroundStyle(YAWATheme.textSecondary)
-
-                                        Text("Day")
-                                            .font(.headline)
-                                            .foregroundStyle(YAWATheme.textPrimary)
-
-                                        Spacer()
-                                    }
-
-                                    Text(day)
-                                        .font(.callout)
-                                        .foregroundStyle(YAWATheme.textPrimary)
-                                        .lineSpacing(6)
-                                        .multilineTextAlignment(.leading)
-                                        .textSelection(.enabled)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .padding(14)
-                                .background(YAWATheme.card)
-                                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            }
-
-                            if let night, !night.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "moon.stars.fill")
-                                            .symbolRenderingMode(.hierarchical)
-                                            .foregroundStyle(YAWATheme.textSecondary)
-
-                                        Text("Night")
-                                            .font(.headline)
-                                            .foregroundStyle(YAWATheme.textPrimary)
-
-                                        Spacer()
-                                    }
-
-                                    Text(night)
-                                        .font(.callout)
-                                        .foregroundStyle(YAWATheme.textPrimary)
-                                        .lineSpacing(6)
-                                        .multilineTextAlignment(.leading)
-                                        .textSelection(.enabled)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .padding(14)
-                                .background(YAWATheme.card)
-                                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            }
-
-                            if hourly.count >= 2 {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "clock")
-                                            .symbolRenderingMode(.hierarchical)
-                                            .foregroundStyle(YAWATheme.textSecondary)
-
-                                        Text("Hourly")
-                                            .font(.headline)
-                                            .foregroundStyle(YAWATheme.textPrimary)
-
-                                        Spacer()
-                                    }
-
-                                    let temps = hourly.map { $0.tempF }
-                                    let minT = temps.min() ?? 0
-                                    let maxT = temps.max() ?? 0
-                                    let pad = max(2, (maxT - minT) * 0.15)
-
-                                    Chart(hourly, id: \.date) { p in
-                                        LineMark(
-                                            x: .value("Time", p.date),
-                                            y: .value("Temp (°F)", p.tempF)
-                                        )
-                                        .interpolationMethod(.catmullRom)
-                                    }
-                                    .chartXScale(domain: (hourly.first!.date)...(hourly.last!.date))
-                                    .chartYScale(domain: (minT - pad)...(maxT + pad))
-                                    .chartXAxis {
-                                        AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
-                                            AxisGridLine().foregroundStyle(YAWATheme.textSecondary.opacity(0.15))
-                                            AxisTick().foregroundStyle(YAWATheme.textSecondary.opacity(0.35))
-                                            AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .abbreviated)))
-                                                .foregroundStyle(YAWATheme.textSecondary)
-                                                .font(.caption2)
-                                        }
-                                    }
-                                    .chartYAxis {
-                                        AxisMarks(values: .stride(by: 10)) { _ in
-                                            AxisGridLine().foregroundStyle(YAWATheme.textSecondary.opacity(0.15))
-                                            AxisTick().foregroundStyle(YAWATheme.textSecondary.opacity(0.35))
-                                            AxisValueLabel()
-                                                .foregroundStyle(YAWATheme.textSecondary)
-                                                .font(.caption2)
-                                        }
-                                    }
-                                    .frame(height: 140)
-                                }
-                                .padding(14)
-                                .background(YAWATheme.card)
-                                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            }
-                        }
+                        forecastDetailCard(
+                            title: detail.title,
+                            day: safeDay,
+                            night: safeNight.isEmpty ? nil : safeNight,
+                            hourly: hourly.map { (date: $0.date, tempF: $0.tempF) }
+                        )
 
                     case .alert(let description, let instructions, let severity):
                         let sym = alertSymbol(for: severity)
@@ -2033,7 +1942,7 @@ private func parseAlertNarrativeSections(from text: String) -> [AlertNarrativeSe
     // labels you care about (add more if you want)
     let labels = ["WHAT", "WHEN", "WHERE", "IMPACTS", "ADDITIONAL DETAILS", "PRECAUTIONARY/PREPAREDNESS ACTIONS"]
     // Intentionally unused (rollback to the warning state per request)
-    let labelPattern = labels.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+//    let labelPattern = labels.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
 
     let labelRegex = labels.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
 

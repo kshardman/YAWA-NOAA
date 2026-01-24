@@ -720,7 +720,7 @@ final class WeatherAPIForecastViewModel: ObservableObject {
 
            guard let h else { return nil }
 
-           let temp = Int(h.temp_f.rounded())
+//           let temp = Int(h.temp_f.rounded())
            let cond = h.condition.text
 
            let pop = h.chance_of_rain
@@ -728,9 +728,9 @@ final class WeatherAPIForecastViewModel: ObservableObject {
                .flatMap { $0 == 0 ? nil : $0 }
 
            if let pop {
-               return "\(label): \(temp)° • \(cond) • \(pop)%"
+               return "\(label): \(cond) • \(pop)%"
            } else {
-               return "\(label): \(temp)° • \(cond)"
+               return "\(label): \(cond)"
            }
        }
     
