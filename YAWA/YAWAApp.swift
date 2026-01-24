@@ -7,6 +7,7 @@ struct YAWAApp: App {
 
     @StateObject private var favorites = FavoritesStore()
     @StateObject private var selection = LocationSelectionStore()
+    @StateObject private var locationManager = LocationManager()
 
     init() {
         URLCache.shared = URLCache(
@@ -41,6 +42,7 @@ struct YAWAApp: App {
             .preferredColorScheme(.dark)   // ← THIS fixes the status bar
             .environmentObject(favorites)
             .environmentObject(selection)
+            .environmentObject(locationManager)
         }
     }
 }

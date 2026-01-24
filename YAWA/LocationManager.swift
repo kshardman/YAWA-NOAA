@@ -73,6 +73,27 @@ final class LocationManager: NSObject, ObservableObject {
     // Burst-update control
     private var stopWorkItem: DispatchWorkItem?
     private var isBursting = false
+    
+    // MARK: - Home label (app-defined)
+
+    private let homeRadiusMeters: CLLocationDistance = 900   // tune: ~0.5–0.6 mile
+
+    private var homeCoordinate: CLLocationCoordinate2D? {
+        let d = UserDefaults.standard
+        guard d.bool(forKey: "homeIsSet") else { return nil }
+        let lat = d.double(forKey: "homeLat")
+        let lon = d.double(forKey: "homeLon")
+        guard !(lat == 0 && lon == 0) else { return nil }
+        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
+
+    private func isAtHome(_ location: CLLocation) -> Bool {
+        guard let home = homeCoordinate else { return false }
+        let homeLoc = CLLocation(latitude: home.latitude, longitude: home.longitude)
+        return location.distance(from: homeLoc) <= homeRadiusMeters
+    }
+    
+    
 
     override init() {
         super.init()
@@ -138,6 +159,11 @@ final class LocationManager: NSObject, ObservableObject {
     // MARK: - Reverse geocode (City, ST)
 
     private func reverseGeocodeIfNeeded(for location: CLLocation) async {
+        // If we're at Home, prefer the simple label and skip geocoding.
+        if isAtHome(location) {
+            self.locationName = "Home"
+            return
+        }
         if let last = lastGeocodedCoord {
             let dLat = abs(last.latitude - location.coordinate.latitude)
             let dLon = abs(last.longitude - location.coordinate.longitude)

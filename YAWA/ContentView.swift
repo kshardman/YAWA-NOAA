@@ -889,7 +889,7 @@ struct ContentView: View {
 //            }
 
             // Row 3+: pills stack vertically (prevents crowding)
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .center, spacing: 8) {
 
                 if !networkMonitor.isOnline {
                     pill("Offline — showing last update", "wifi.slash")
@@ -937,6 +937,7 @@ struct ContentView: View {
                     .opacity(0.95)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .center)
         }
         .padding(14)
         .background(YAWATheme.card2)

@@ -393,3 +393,4 @@ enum WeatherCache {
         return try? JSONDecoder().decode(WeatherService.Snapshot.self, from: data)
     }
 }
+
