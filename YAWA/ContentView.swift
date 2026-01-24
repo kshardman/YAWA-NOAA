@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import CoreLocation
+import Charts
 
 struct RadarViewPlaceholder: View {
     let latitude: Double
@@ -130,8 +131,8 @@ struct ContentView: View {
 
     private enum DetailBody {
         case text(String)
-        case forecast(day: String, night: String?)
         case alert(description: String?, instructions: [String], severity: String?)
+        case forecast(day: String?, night: String?, hourly: [WeatherAPIForecastViewModel.HourlyPoint])
     }
 
     private struct DetailPayload: Identifiable {
@@ -144,14 +145,14 @@ struct ContentView: View {
             self.body = .text(body)
         }
 
-        init(title: String, day: String, night: String?) {
-            self.title = title
-            self.body = .forecast(day: day, night: night)
-        }
-
         init(title: String, description: String?, instructions: [String], severity: String?) {
             self.title = title
             self.body = .alert(description: description, instructions: instructions, severity: severity)
+        }
+
+        init(title: String, day: String?, night: String?, hourly: [WeatherAPIForecastViewModel.HourlyPoint]) {
+            self.title = title
+            self.body = .forecast(day: day, night: night, hourly: hourly)
         }
     }
     
@@ -561,6 +562,65 @@ struct ContentView: View {
 
     // MARK: - Extracted sheets
 
+    private func weatherAPIHourlyTuplesForDayIndex(_ index: Int) -> [(date: Date, tempF: Double)] {
+        let all = weatherApiForecastViewModel.primaryHourlyPoints
+            .map { (date: $0.date, tempF: $0.tempF) }
+
+        guard !all.isEmpty else { return [] }
+
+        let cal = Calendar.current
+        let grouped = Dictionary(grouping: all) { cal.startOfDay(for: $0.date) }
+        let keys = grouped.keys.sorted()
+
+        // ✅ IMPORTANT: do NOT fall back to "all" (that makes every day look identical)
+        guard index >= 0, index < keys.count else { return [] }
+
+        let dayKey = keys[index]
+        return (grouped[dayKey] ?? []).sorted { $0.date < $1.date }
+    }
+
+    private func weatherAPIHourlyTuples(forDateText dateText: String, fallbackIndex: Int) -> [(date: Date, tempF: Double)] {
+        let all = weatherApiForecastViewModel.primaryHourlyPoints
+            .map { (date: $0.date, tempF: $0.tempF) }
+
+        guard !all.isEmpty else { return [] }
+
+        // dateText is like "1/23"
+        let parts = dateText.split(separator: "/")
+        guard parts.count == 2,
+              let m = Int(parts[0]),
+              let d = Int(parts[1])
+        else {
+            return weatherAPIHourlyTuplesForDayIndex(fallbackIndex)
+        }
+
+        let cal = Calendar.current
+        let now = Date()
+        let currentYear = cal.component(.year, from: now)
+        let currentMonth = cal.component(.month, from: now)
+
+        // handle year rollover (Dec -> Jan forecasts, etc.)
+        var year = currentYear
+        if m < currentMonth - 6 { year += 1 }
+        if m > currentMonth + 6 { year -= 1 }
+
+        var comps = DateComponents()
+        comps.year = year
+        comps.month = m
+        comps.day = d
+        comps.timeZone = TimeZone.current
+
+        guard let dayDate = cal.date(from: comps) else {
+            return weatherAPIHourlyTuplesForDayIndex(fallbackIndex)
+        }
+
+        let key = cal.startOfDay(for: dayDate)
+
+        let grouped = Dictionary(grouping: all) { cal.startOfDay(for: $0.date) }
+        return (grouped[key] ?? []).sorted { $0.date < $1.date }
+    }
+    
+    
     private func splitDayNight(_ text: String) -> (day: String, night: String?) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -583,7 +643,7 @@ struct ContentView: View {
         return (day: dayOnly.isEmpty ? t : dayOnly, night: nil)
     }
 
-    private func forecastDetailCard(title: String, day: String, night: String?) -> some View {
+    private func forecastDetailCard(title: String, day: String, night: String?, hourly: [(date: Date, tempF: Double)]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
 
             // Header row (matches Daily Forecast card vibe)
@@ -656,6 +716,69 @@ struct ContentView: View {
                 .background(YAWATheme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
+
+            // Hourly sub-card (optional)
+            if hourly.count >= 2 {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(YAWATheme.textSecondary)
+
+                        Text("Hourly")
+                            .font(.headline)
+                            .foregroundStyle(YAWATheme.textPrimary)
+
+                        Spacer()
+                    }
+
+                    let temps = hourly.map { $0.tempF }
+                    let minT = (temps.min() ?? 0)
+                    let maxT = (temps.max() ?? 0)
+
+                    // Round to nice 10°F bounds so axis ticks land on clean values.
+                    let yMin = floor(minT / 10.0) * 10.0
+                    let yMax = ceil(maxT / 10.0) * 10.0
+
+                    Chart(hourly, id: \.date) { p in
+                        LineMark(
+                            x: .value("Time", p.date),
+                            y: .value("Temp (°F)", p.tempF)
+                        )
+                        .interpolationMethod(.catmullRom)
+                    }
+                    .chartXScale(domain: (hourly.first!.date)...(hourly.last!.date))
+                    .chartYScale(domain: yMin...yMax)
+                    .chartXAxis {
+                        AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
+                            AxisGridLine().foregroundStyle(YAWATheme.textSecondary.opacity(0.15))
+                            AxisTick().foregroundStyle(YAWATheme.textSecondary.opacity(0.35))
+                            AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .abbreviated)))
+                                .foregroundStyle(YAWATheme.textSecondary)
+                                .font(.caption2)
+                        }
+                    }
+                    .chartYAxis {
+                        let yValues = Array(stride(from: yMin, through: yMax, by: 10))
+                        AxisMarks(values: yValues) { value in
+                            AxisGridLine().foregroundStyle(YAWATheme.textSecondary.opacity(0.15))
+                            AxisTick().foregroundStyle(YAWATheme.textSecondary.opacity(0.35))
+                            AxisValueLabel {
+                                if let v = value.as(Double.self) {
+                                    Text("\(Int(v))°")
+                                }
+                            }
+                            .foregroundStyle(YAWATheme.textSecondary)
+                            .font(.caption2)
+                        }
+                    }
+                    .frame(height: 92)
+                    .padding(.top, 2)
+                }
+                .padding(12)
+                .background(YAWATheme.card)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
         }
         .padding(14)
         .background(YAWATheme.card2)
@@ -701,8 +824,116 @@ struct ContentView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
-                    case .forecast(let day, let night):
-                        forecastDetailCard(title: detail.title, day: day, night: night)
+                    case .forecast(let day, let night, let hourly):
+                        VStack(alignment: .leading, spacing: 12) {
+
+                            if let day, !day.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "sun.max.fill")
+                                            .symbolRenderingMode(.hierarchical)
+                                            .foregroundStyle(YAWATheme.textSecondary)
+
+                                        Text("Day")
+                                            .font(.headline)
+                                            .foregroundStyle(YAWATheme.textPrimary)
+
+                                        Spacer()
+                                    }
+
+                                    Text(day)
+                                        .font(.callout)
+                                        .foregroundStyle(YAWATheme.textPrimary)
+                                        .lineSpacing(6)
+                                        .multilineTextAlignment(.leading)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(14)
+                                .background(YAWATheme.card)
+                                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            }
+
+                            if let night, !night.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "moon.stars.fill")
+                                            .symbolRenderingMode(.hierarchical)
+                                            .foregroundStyle(YAWATheme.textSecondary)
+
+                                        Text("Night")
+                                            .font(.headline)
+                                            .foregroundStyle(YAWATheme.textPrimary)
+
+                                        Spacer()
+                                    }
+
+                                    Text(night)
+                                        .font(.callout)
+                                        .foregroundStyle(YAWATheme.textPrimary)
+                                        .lineSpacing(6)
+                                        .multilineTextAlignment(.leading)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(14)
+                                .background(YAWATheme.card)
+                                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            }
+
+                            if hourly.count >= 2 {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "clock")
+                                            .symbolRenderingMode(.hierarchical)
+                                            .foregroundStyle(YAWATheme.textSecondary)
+
+                                        Text("Hourly")
+                                            .font(.headline)
+                                            .foregroundStyle(YAWATheme.textPrimary)
+
+                                        Spacer()
+                                    }
+
+                                    let temps = hourly.map { $0.tempF }
+                                    let minT = temps.min() ?? 0
+                                    let maxT = temps.max() ?? 0
+                                    let pad = max(2, (maxT - minT) * 0.15)
+
+                                    Chart(hourly, id: \.date) { p in
+                                        LineMark(
+                                            x: .value("Time", p.date),
+                                            y: .value("Temp (°F)", p.tempF)
+                                        )
+                                        .interpolationMethod(.catmullRom)
+                                    }
+                                    .chartXScale(domain: (hourly.first!.date)...(hourly.last!.date))
+                                    .chartYScale(domain: (minT - pad)...(maxT + pad))
+                                    .chartXAxis {
+                                        AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
+                                            AxisGridLine().foregroundStyle(YAWATheme.textSecondary.opacity(0.15))
+                                            AxisTick().foregroundStyle(YAWATheme.textSecondary.opacity(0.35))
+                                            AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .abbreviated)))
+                                                .foregroundStyle(YAWATheme.textSecondary)
+                                                .font(.caption2)
+                                        }
+                                    }
+                                    .chartYAxis {
+                                        AxisMarks(values: .stride(by: 10)) { _ in
+                                            AxisGridLine().foregroundStyle(YAWATheme.textSecondary.opacity(0.15))
+                                            AxisTick().foregroundStyle(YAWATheme.textSecondary.opacity(0.35))
+                                            AxisValueLabel()
+                                                .foregroundStyle(YAWATheme.textSecondary)
+                                                .font(.caption2)
+                                        }
+                                    }
+                                    .frame(height: 140)
+                                }
+                                .padding(14)
+                                .background(YAWATheme.card)
+                                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            }
+                        }
 
                     case .alert(let description, let instructions, let severity):
                         let sym = alertSymbol(for: severity)
@@ -1003,27 +1234,27 @@ struct ContentView: View {
                         ForEach(Array(weatherApiForecastViewModel.days.enumerated()), id: \.element.id) { index, d in
                             let (sym, color) = conditionsSymbolAndColor(for: d.conditionText, isNight: false)
                             let popText = d.chanceRain.map { "\($0)%" }
-                            
+
                             HStack(spacing: 10) {
                                 // Left column (fixed)
                                 HStack(spacing: 4) {
                                     Text(d.weekday)
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(YAWATheme.textPrimary)
-                                    
+
                                     Text(d.dateText)
                                         .font(.caption)
                                         .foregroundStyle(YAWATheme.textSecondary)
                                 }
                                 .frame(width: sideCol, alignment: .leading)
-                                
+
                                 // Middle column (true center)
                                 VStack(spacing: 2) {
                                     Image(systemName: sym)
                                         .symbolRenderingMode(.hierarchical)
                                         .foregroundStyle(color)
                                         .font(.title3)
-                                    
+
                                     Group {
                                         if let popText {
                                             Text(popText)
@@ -1037,7 +1268,7 @@ struct ContentView: View {
                                 }
                                 .frame(height: 34, alignment: .center)
                                 .frame(maxWidth: .infinity, alignment: .center)
-                                
+
                                 // Right column (fixed)
                                 Text("H \(d.hiF)°  L \(d.loF)°")
                                     .font(.subheadline.weight(.semibold))
@@ -1048,13 +1279,18 @@ struct ContentView: View {
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 let parts = splitDayNight(d.detailText)
+
+                                // ✅ this is the key: use the tapped day’s id, not "primary"
+                                let hourly = weatherApiForecastViewModel.hourlyPoints(for: d.id)
+
                                 selectedDetail = DetailPayload(
                                     title: "\(d.weekday) \(d.dateText)",
                                     day: parts.day,
-                                    night: parts.night
+                                    night: parts.night,
+                                    hourly: hourly
                                 )
                             }
-                            
+
                             if index < weatherApiForecastViewModel.days.count - 1 {
                                 Divider().opacity(0.5)
                             }
@@ -1211,7 +1447,8 @@ struct ContentView: View {
                         selectedDetail = DetailPayload(
                             title: "\(abbreviatedDayName(d.name)) \(d.dateText)",
                             day: dayText,
-                            night: normalizedNight.isEmpty ? nil : normalizedNight
+                            night: normalizedNight.isEmpty ? nil : normalizedNight,
+                            hourly: []
                         )
                     }
 

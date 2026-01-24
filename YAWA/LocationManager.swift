@@ -655,6 +655,12 @@ final class WeatherAPIForecastViewModel: ObservableObject {
         let chanceRain: Int?
         let detailText: String   // ✅ add
     }
+    
+    struct HourlyPoint: Identifiable, Equatable {
+        let id: Int           // time_epoch
+        let date: Date
+        let tempF: Double
+    }
 
     @Published var days: [DayRow] = []
     @Published var isLoading = false
@@ -662,6 +668,8 @@ final class WeatherAPIForecastViewModel: ObservableObject {
 
     private let service = WeatherAPIService()
     private var lastCoord: CLLocationCoordinate2D?
+    
+    private var hourlyByDay: [String: [WeatherAPIForecastResponse.ForecastDay.Hour]] = [:]
 
     private let weekdayFormatter: DateFormatter = {
         let df = DateFormatter()
@@ -725,6 +733,26 @@ final class WeatherAPIForecastViewModel: ObservableObject {
                return "\(label): \(temp)° • \(cond)"
            }
        }
+    
+    func hourlyPoints(for dayID: String) -> [HourlyPoint] {
+        guard let hours = hourlyByDay[dayID] else { return [] }
+        return hours
+            .sorted(by: { $0.time_epoch < $1.time_epoch })
+            .map { h in
+                HourlyPoint(
+                    id: h.time_epoch,
+                    date: Date(timeIntervalSince1970: TimeInterval(h.time_epoch)),
+                    tempF: h.temp_f
+                )
+            }
+    }
+
+    /// Convenience: first-day hourly points (used for a compact inline “Today” graph on the daily card)
+    var primaryHourlyPoints: [HourlyPoint] {
+        guard let first = days.first else { return [] }
+        return hourlyPoints(for: first.id)
+    }
+    
 
     
     
@@ -749,13 +777,15 @@ final class WeatherAPIForecastViewModel: ObservableObject {
 
         guard !key.isEmpty else {
             days = []
+            hourlyByDay = [:]
             errorMessage = "Enter a WeatherAPI key in Settings to enable forecast."
             return
         }
 
         do {
             let forecastDays = try await service.fetchForecast(lat: coord.latitude, lon: coord.longitude, apiKey: key)
-
+            hourlyByDay = Dictionary(uniqueKeysWithValues: forecastDays.map { ($0.date, $0.hour) })
+            
             // Build raw rows first (WeatherAPI lows are calendar-day lows)
             struct RawDay {
                 let id: String
