@@ -247,6 +247,7 @@ struct ContentView: View {
     // Sheets
     @State private var showingSettings = false
     @State private var showingLocations = false
+    @State private var locationTapPulse = false
 
     // When picking a favorite we force NOAA, but we remember what user had selected
     @State private var previousSourceRaw: String? = nil
@@ -366,6 +367,11 @@ struct ContentView: View {
                 sourceRaw: $sourceRaw,
                 previousSourceRaw: $previousSourceRaw
             )
+            .presentationDetents([.fraction(0.85), .large])      // drawer height + pull to full
+            .presentationDragIndicator(.visible)                 // grabber
+            .presentationCornerRadius(28)                        // rounded top
+            .presentationBackground(.ultraThinMaterial)          // drawer vibe
+            .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.55)))
         }
         .sheet(item: $radarTarget) { target in
             RadarView(target: target)
@@ -1059,33 +1065,50 @@ struct ContentView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(YAWATheme.textPrimary)
                 }
-                .layoutPriority(1) // keep title readable
+                .layoutPriority(2) // title wins; pill truncates first
 
                 Spacer(minLength: 8)
 
-                HStack(spacing: 6) {
-                    if source == .pws {
-                        let label = viewModel.pwsLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-                        Text(label.isEmpty ? "Personal Weather Station" : label)
-                            .font(.subheadline)
-                            .foregroundStyle(YAWATheme.textSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    } else {
-                        let loc = headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        Text(loc.isEmpty ? "Current Location" : loc)
-                            .font(.subheadline)
-                            .foregroundStyle(YAWATheme.textSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                Button {
+                    // Small pulse so the tap feels intentional
+                    withAnimation(.easeInOut(duration: 0.12)) { locationTapPulse = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                        withAnimation(.easeInOut(duration: 0.12)) { locationTapPulse = false }
+                        showingLocations = true
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        if source == .pws {
+                            let label = viewModel.pwsLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+                            Text(label.isEmpty ? "Personal Weather Station" : label)
+                                .font(.subheadline)
+                                .foregroundStyle(YAWATheme.textSecondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: 200, alignment: .trailing)
+                        } else {
+                            let loc = headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines)
+                            Text(loc.isEmpty ? "Current Location" : loc)
+                                .font(.subheadline)
+                                .foregroundStyle(YAWATheme.textSecondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: 200, alignment: .trailing)
 
-                        if showCurrentLocationGlyph {
-                            Image(systemName: "location.circle")
-                                .imageScale(.small)
-                                .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
+                            if showCurrentLocationGlyph {
+                                Image(systemName: "location.circle")
+                                    .imageScale(.small)
+                                    .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
+                            }
+                            Image(systemName: "chevron.down")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(YAWATheme.textSecondary.opacity(0.8))
                         }
                     }
+                    .scaleEffect(locationTapPulse ? 0.96 : 1.0)
+                    .opacity(locationTapPulse ? 0.85 : 1.0)
                 }
+                .buttonStyle(.plain)
                 .layoutPriority(0) // let this truncate first
             }
 
