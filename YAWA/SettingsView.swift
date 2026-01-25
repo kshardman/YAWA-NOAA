@@ -8,21 +8,12 @@
 import SwiftUI
 import UIKit
 import UserNotifications
-import CoreLocation
 
 struct SettingsView: View {
     @AppStorage("pwsStationID") private var stationID: String = ""
     @AppStorage("pwsApiKey") private var apiKey: String = ""
 
     @AppStorage("weatherApiKey") private var weatherApiKey: String = ""
-    
-    @AppStorage("homeIsSet") private var homeIsSet: Bool = false
-    @AppStorage("homeLat") private var homeLat: Double = 0
-    @AppStorage("homeLon") private var homeLon: Double = 0
-    @AppStorage("homeLabel") private var homeLabel: String = ""
-
-    @EnvironmentObject private var locationManager: LocationManager
-    
 
     // One-time defaults from bundled config.plist (optional)
     @State private var loadedDefaults = false
@@ -52,12 +43,8 @@ struct SettingsView: View {
                 List {
                     notificationsSection
                     sourceSection
-                    homeSection
                     attributionSection
-
-                    #if DEBUG
-                    debugSection
-                    #endif
+                    aboutSection
                 }
                 // ✅ Let the sky show through
                 .scrollContentBackground(.hidden)
@@ -278,52 +265,6 @@ private extension SettingsView {
         .listRowSeparator(.hidden)
     }
 
-    var homeSection: some View {
-        Section {
-            HStack {
-                Text("Home")
-                    .foregroundStyle(YAWATheme.textPrimary)
-                Spacer()
-                Text(homeIsSet ? (homeLabel.isEmpty ? "Set" : homeLabel) : "Not set")
-                    .foregroundStyle(YAWATheme.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-
-            Button {
-                guard let c = locationManager.coordinate else { return }
-                homeIsSet = true
-                homeLat = c.latitude
-                homeLon = c.longitude
-
-                // Prefer the current city/state label
-                let label = (locationManager.locationName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                homeLabel = label.isEmpty ? "Current location" : label
-            } label: {
-                Label("Set Home to current location", systemImage: "house")
-            }
-            .disabled(locationManager.coordinate == nil)
-
-            if homeIsSet {
-                Button(role: .destructive) {
-                    homeIsSet = false
-                    homeLat = 0
-                    homeLon = 0
-                    homeLabel = ""
-                } label: {
-                    Label("Clear Home", systemImage: "trash")
-                }
-            }
-        } header: {
-            Text("Home")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(YAWATheme.textPrimary)
-        }
-        .textCase(nil)
-        .listRowBackground(YAWATheme.card2)
-        .listRowSeparator(.hidden)
-    }
-    
     var attributionSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
@@ -344,23 +285,30 @@ private extension SettingsView {
         .listRowSeparator(.hidden)
     }
 
-    #if DEBUG
-    var debugSection: some View {
-        Section {
-            Button("Clear alert notification history") {
-                NotificationsManager.shared.clearAlertNotificationHistory()
+    var aboutSection: some View {
+        Section("About") {
+            HStack {
+                Text("Version (Build)")
+                    .foregroundStyle(YAWATheme.textPrimary)
+
+                Spacer()
+
+                Text("\(appVersion) (\(buildNumber))")
+                    .foregroundStyle(YAWATheme.textSecondary)
+                    .monospacedDigit()
             }
-            .foregroundStyle(.red)
-        } header: {
-            Text("Debug")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(YAWATheme.textPrimary)
         }
-        .textCase(nil)
         .listRowBackground(YAWATheme.card2)
         .listRowSeparator(.hidden)
     }
-    #endif
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
+    private var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+    }
 }
 
 // MARK: - Helpers
