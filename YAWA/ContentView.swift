@@ -495,7 +495,6 @@ struct ContentView: View {
 
     private var topBarToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            ToolbarIconButton("star.circle.fill", tint: .white) { showingLocations = true }
             ToolbarIconButton("gearshape.fill", tint: .white) { showingSettings = true }
         }
     }
