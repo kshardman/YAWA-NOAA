@@ -845,7 +845,7 @@ struct ContentView: View {
         case "moderate":
             return Color.orange.opacity(0.9)
         default:
-            return Color.secondary.opacity(0.8)
+            return Color.blue.opacity(0.9)
         }
     }
 
@@ -944,6 +944,8 @@ struct ContentView: View {
                                                     Text(label)
                                                         .font(.headline)
                                                         .foregroundStyle(YAWATheme.textPrimary)
+                                                        .padding(.top, 6)
+                                                        .padding(.bottom, 6)
                                                 }
 
                                                 Text(s.body)
@@ -2254,55 +2256,93 @@ private func stripLeadingBullet(_ s: String) -> String {
 
 /// Parses NOAA-style narrative like:
 /// "WHAT...text\n\nWHEN...text\n\nIMPACTS...text"
+// MARK: - Alert narrative parsing (WHAT/WHERE/WHEN/IMPACTS…)
+
+
 private func parseAlertNarrativeSections(from text: String) -> [AlertNarrativeSection] {
-    let normalized = text
+    let cleaned = text
         .replacingOccurrences(of: "\r\n", with: "\n")
         .replacingOccurrences(of: "\r", with: "\n")
         .trimmingCharacters(in: .whitespacesAndNewlines)
 
-    // labels you care about (add more if you want)
-    let labels = ["WHAT", "WHEN", "WHERE", "IMPACTS", "ADDITIONAL DETAILS", "PRECAUTIONARY/PREPAREDNESS ACTIONS"]
-    // Intentionally unused (rollback to the warning state per request)
-//    let labelPattern = labels.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+    guard !cleaned.isEmpty else { return [] }
 
-    let labelRegex = labels.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+    let lines = cleaned
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    // Match: LABEL... body (until next LABEL... or end)
-    let pattern = #"(?s)(?:^|\n)\s*(\#(labelRegex))\s*\.{3}\s*(.*?)(?=(?:\n\s*(?:\#(labelRegex))\s*\.{3})|\z)"#
+    func parseStarSectionLine(_ line: String) -> (label: String, body: String)? {
+        guard line.hasPrefix("*") else { return nil }
 
-    guard let re = try? NSRegularExpression(pattern: pattern, options: []) else {
-        return [AlertNarrativeSection(label: nil, body: normalized)]
-    }
+        var s = line
+        s.removeFirst() // drop "*"
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
 
-    let ns = normalized as NSString
-    let matches = re.matches(in: normalized, options: [], range: NSRange(location: 0, length: ns.length))
+        guard let dots = s.range(of: "...") else { return nil }
 
-    if matches.isEmpty {
-        return [AlertNarrativeSection(label: nil, body: normalized)]
-    }
+        let rawLabel = s[..<dots.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawBody  = s[dots.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
 
-    var out: [AlertNarrativeSection] = []
-
-    for m in matches {
-        let rawLabel = ns.substring(with: m.range(at: 1))
-        let rawBody = ns.substring(with: m.range(at: 2))
+        guard !rawLabel.isEmpty else { return nil }
 
         let label = rawLabel
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .capitalized
+            .lowercased()
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
 
-        let body = rawBody
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "  ", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (label, rawBody)
+    }
 
+    var sections: [AlertNarrativeSection] = []
+    var currentLabel: String? = nil
+    var currentBody = ""
+    var sawStarSections = false
+
+    func flush() {
+        let body = currentBody.trimmingCharacters(in: .whitespacesAndNewlines)
         if !body.isEmpty {
-            out.append(AlertNarrativeSection(label: "\(label)…", body: body))
+            sections.append(AlertNarrativeSection(label: currentLabel, body: body))
+        }
+        currentLabel = nil
+        currentBody = ""
+    }
+
+    for line in lines {
+        if line.isEmpty {
+            if !currentBody.isEmpty { currentBody += "\n\n" }
+            continue
+        }
+
+        if let parsed = parseStarSectionLine(line) {
+            sawStarSections = true
+            flush()
+            currentLabel = parsed.label
+            currentBody = parsed.body
+            continue
+        }
+
+        if !currentBody.isEmpty {
+            if currentBody.hasSuffix("\n\n") {
+                currentBody += line
+            } else {
+                currentBody += " " + line
+            }
+        } else {
+            currentLabel = nil
+            currentBody = line
         }
     }
 
-    return out.isEmpty ? [AlertNarrativeSection(label: nil, body: normalized)] : out
+    flush()
+
+    if !sawStarSections {
+        return [AlertNarrativeSection(label: nil, body: cleaned)]
+    }
+
+    return sections
 }
+
 
 
 
@@ -2358,7 +2398,7 @@ private struct InlineAlertRow: View {
         case "moderate":
             return Color.orange.opacity(0.9)
         default:
-            return Color.secondary.opacity(0.8)
+            return Color.blue.opacity(0.9)
         }
     }
 }
