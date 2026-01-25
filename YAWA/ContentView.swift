@@ -385,8 +385,6 @@ struct ContentView: View {
             headerSection
                 .padding(.top, 8)
 
-            tilesSection
-
             forecastSection
 
             if showEasterEgg {
@@ -1148,9 +1146,13 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .center)
+
+            // Tiles live *inside* the Current Conditions card
+            tilesSection
+                .padding(.top, 12)
         }
         .padding(14)
-        .background(YAWATheme.card2)
+        .background(YAWATheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
@@ -1365,7 +1367,7 @@ struct ContentView: View {
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(YAWATheme.textSecondary)
 
-                Text("Daily Forecast")
+                Text("7-day Forecast")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(YAWATheme.textPrimary)
 
@@ -1594,7 +1596,7 @@ struct ContentView: View {
         .frame(minHeight: miniMinHeight)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(tileBackground)
+        .background(YAWATheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
