@@ -69,6 +69,35 @@ final class LocationManager: NSObject, ObservableObject {
     private let manager = CLLocationManager()
     private var lastGeocodedCoord: CLLocationCoordinate2D?
     private let geocoder = CLGeocoder()
+    
+    // Cache reverse-geocoded country codes for favorites (avoid repeated geocoder calls)
+    private var countryCodeCache: [String: String] = [:]
+
+    private func cacheKey(for coord: CLLocationCoordinate2D) -> String {
+        // Round to reduce churn from tiny coordinate jitter
+        let lat = String(format: "%.4f", coord.latitude)
+        let lon = String(format: "%.4f", coord.longitude)
+        return "\(lat),\(lon)"
+    }
+
+    /// Best-effort ISO country code for a coordinate (e.g. "US", "CA").
+    func countryCode(for coord: CLLocationCoordinate2D) async -> String? {
+        let key = cacheKey(for: coord)
+        if let cached = countryCodeCache[key] { return cached }
+
+        let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+
+        do {
+            let placemarks = try await geocoder.reverseGeocodeLocation(loc)
+            let code = placemarks.first?.isoCountryCode
+            if let code { countryCodeCache[key] = code }
+            return code
+        } catch {
+            return nil
+        }
+    }
+    
+    
 
     // Burst-update control
     private var stopWorkItem: DispatchWorkItem?
@@ -517,7 +546,133 @@ final class ForecastViewModel: ObservableObject {
     }
 }
 
-// MARK: - WeatherAPI.com 3-day Forecast
+// MARK: - WeaterAPI.com Current Response
+
+struct WeatherAPICurrentResponse: Decodable {
+    struct Location: Decodable {
+        let name: String
+        let region: String
+        let country: String
+        let lat: Double
+        let lon: Double
+    }
+
+    struct Current: Decodable {
+        let temp_f: Double
+        let feelslike_f: Double?
+        let humidity: Int?
+        let wind_mph: Double?
+        let wind_dir: String?
+        let pressure_in: Double?
+        let precip_in: Double?
+        let uv: Double?
+        let vis_miles: Double?
+        let condition: Condition
+
+        struct Condition: Decodable { let text: String }
+    }
+
+    let location: Location
+    let current: Current
+}
+
+final class WeatherAPICurrentService {
+    private let session: URLSession
+
+    init() {
+        let cfg = URLSessionConfiguration.default
+        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+        cfg.timeoutIntervalForRequest = 20
+        self.session = URLSession(configuration: cfg)
+    }
+
+    func fetchCurrent(lat: Double, lon: Double, apiKey: String) async throws -> WeatherAPICurrentResponse {
+        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw WeatherAPIServiceError.missingKey }
+
+        var comps = URLComponents()
+        comps.scheme = "https"
+        comps.host = "api.weatherapi.com"
+        comps.path = "/v1/current.json"
+        comps.queryItems = [
+            URLQueryItem(name: "key", value: trimmed),
+            URLQueryItem(name: "q", value: "\(lat),\(lon)"),
+            URLQueryItem(name: "aqi", value: "no")
+        ]
+
+        guard let url = comps.url else { throw WeatherAPIServiceError.invalidURL }
+
+        var req = URLRequest(url: url)
+        req.setValue("Yawa NOAA (personal app)", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw WeatherAPIServiceError.badStatus(http.statusCode)
+        }
+
+        return try JSONDecoder().decode(WeatherAPICurrentResponse.self, from: data)
+    }
+}
+
+@MainActor
+final class WeatherAPICurrentViewModel: ObservableObject {
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var current: WeatherAPICurrentResponse.Current?
+    @Published var locationLabel: String?      // e.g. "Toronto, ON"
+    @Published var lastUpdate: Date?
+
+    private let service = WeatherAPICurrentService()
+    private var lastCoord: CLLocationCoordinate2D?
+
+    func loadIfNeeded(for coord: CLLocationCoordinate2D) async {
+        if let last = lastCoord,
+           abs(last.latitude - coord.latitude) < 0.01,
+           abs(last.longitude - coord.longitude) < 0.01,
+           current != nil {
+            return
+        }
+        lastCoord = coord
+        await refresh(for: coord)
+    }
+
+    func refresh(for coord: CLLocationCoordinate2D) async {
+        isLoading = true
+        defer { isLoading = false }
+
+        let key = (UserDefaults.standard.string(forKey: "weatherApiKey") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !key.isEmpty else {
+            current = nil
+            locationLabel = nil
+            errorMessage = "Enter a WeatherAPI key in Settings."
+            return
+        }
+
+        do {
+            let resp = try await service.fetchCurrent(lat: coord.latitude, lon: coord.longitude, apiKey: key)
+            current = resp.current
+            lastUpdate = Date()
+
+            // This is optional, but nice for international favorites:
+            let name = resp.location.name
+            let region = resp.location.region
+            locationLabel = region.isEmpty ? name : "\(name), \(region)"
+
+            errorMessage = nil
+        } catch {
+            if error is CancellationError { return }
+            if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
+            current = nil
+            errorMessage = "Current conditions unavailable."
+        }
+    }
+}
+
+
+// MARK: - WeatherAPI.com Forecast
 
 struct WeatherAPIForecastResponse: Decodable {
     struct Forecast: Decodable {

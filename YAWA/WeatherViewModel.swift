@@ -239,7 +239,7 @@ final class WeatherViewModel: ObservableObject {
 
             // Humidity (%)
             if let h = o.relativeHumidity?.value {
-                humidity = "\(Int(h.rounded()))%"
+                humidity = "\(h)%"
             } else {
                 humidity = "—"
             }

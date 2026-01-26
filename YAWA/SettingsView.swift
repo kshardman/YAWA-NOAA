@@ -203,7 +203,7 @@ private extension SettingsView {
         Section {
             // ✅ Simple mode picker (NOAA vs PWS)
             Picker("Current Conditions Source", selection: $sourceRaw) {
-                Text("NOAA").tag(CurrentConditionsSource.noaa.rawValue)
+                Text("NOAA+").tag(CurrentConditionsSource.noaa.rawValue)
                 Text("PWS").tag(CurrentConditionsSource.pws.rawValue)
             }
             .pickerStyle(.segmented)
@@ -211,7 +211,7 @@ private extension SettingsView {
             // Helpful subtitle / explanation
             VStack(alignment: .leading, spacing: 6) {
                 Text(source == .noaa
-                     ? "Uses your location + weather.gov observations and forecasts."
+                     ? "NOAA+ uses NOAA in the U.S. and WeatherAPI for international locations."
                      : "Uses your configured station + Weather.com PWS API key and WeatherAPI.com key and forecasts")
                     .font(.caption)
                     .foregroundStyle(YAWATheme.textSecondary)
@@ -255,25 +255,6 @@ private extension SettingsView {
         .listRowSeparator(.hidden)
     }
 
-//    var attributionSection: some View {
-//        Section {
-//            VStack(alignment: .leading, spacing: 10) {
-//                Text("Automatic current conditions use NOAA weather.gov nearby observations.")
-//                Text("Personal Weather Station mode uses Weather.com PWS API.")
-//                Text("Forecasts use NOAA weather.gov.")
-//            }
-//            .font(.subheadline)
-//            .foregroundStyle(YAWATheme.textSecondary)
-//            .frame(maxWidth: .infinity, alignment: .leading)
-//        } header: {
-//            Text("Attribution")
-//                .font(.subheadline.weight(.semibold))
-//                .foregroundStyle(YAWATheme.textPrimary)
-//                .textCase(nil)
-//        }
-//        .listRowBackground(YAWATheme.card2)
-//        .listRowSeparator(.hidden)
-//    }
 
     var aboutSection: some View {
         Section("About") {

@@ -82,24 +82,39 @@ struct ContentView: View {
  //   @State private var showingRadar = false
     @State private var radarTarget: RadarTarget?
     
+    @State private var selectedFavoriteCountryCode: String? = nil
     
+    @StateObject private var weatherApiCurrentVM = WeatherAPICurrentViewModel()
+    
+//    private var effectiveWeatherApiCoordinate: CLLocationCoordinate2D? {
+//        // In PWS mode, anchor WeatherAPI forecast to the station coordinate (published by WeatherViewModel)
+//        if source == .pws {
+//            return viewModel.pwsStationCoordinate
+//        }
+//        // Otherwise follow the active (GPS/favorite) coordinate
+//        return locationManager.coordinate
+//    }
     
     private var effectiveWeatherApiCoordinate: CLLocationCoordinate2D? {
-        // In PWS mode, anchor WeatherAPI forecast to the station coordinate (published by WeatherViewModel)
-        if source == .pws {
-            return viewModel.pwsStationCoordinate
+        if let fav = selection.selectedFavorite {
+            return fav.coordinate
         }
-        // Otherwise follow the active (GPS/favorite) coordinate
         return locationManager.coordinate
     }
 
-    private var weatherApiCoordKey: String {
-        guard let c = effectiveWeatherApiCoordinate else { return "" }
-        let lat = (c.latitude * 100).rounded() / 100
-        let lon = (c.longitude * 100).rounded() / 100
-        return "\(lat),\(lon)"
-    }
+//    private var weatherApiCoordKey: String {
+//        guard let c = effectiveWeatherApiCoordinate else { return "" }
+//        let lat = (c.latitude * 100).rounded() / 100
+//        let lon = (c.longitude * 100).rounded() / 100
+//        return "\(lat),\(lon)"
+//    }
+//
     
+    private var weatherApiCoordKey: String {
+        guard let c = effectiveWeatherApiCoordinate else { return "weatherapi:none" }
+        // 4 decimals ~= ~11m precision; plenty to distinguish favorites
+        return String(format: "weatherapi:%.4f,%.4f", c.latitude, c.longitude)
+    }
     
     // nil = “use GPS”; non-nil = user selected a city/favorite
     @State private var selectedCity: CitySearchViewModel.Result?
@@ -336,26 +351,181 @@ struct ContentView: View {
         rootView
     }
 
+    // MARK: - should use WAPI
+
+    private var isInternationalFavorite: Bool {
+        guard selection.selectedFavorite != nil else { return false }
+        if let code = selectedFavoriteCountryCode {
+            return code.uppercased() != "US"
+        }
+        return false
+    }
+
+    private var shouldUseWeatherApiForCurrent: Bool {
+        // If user explicitly chose PWS mode, use WeatherAPI.
+        if source == .pws { return true }
+
+        // If user selected a non‑US favorite, fall back to WeatherAPI for current.
+        if isInternationalFavorite { return true }
+
+        return false
+    }
+    
+
+    // MARK: - Current tile display (NOAA vs WeatherAPI)
+
+    private var weatherApiTempText: String {
+        guard let c = weatherApiCurrentVM.current else { return "—" }
+        return "\(Int((c.temp_f ?? 0).rounded()))°"
+    }
+
+    private var weatherApiHumidityText: String {
+        guard let c = weatherApiCurrentVM.current else { return "—" }
+
+        // WeatherAPI humidity is already an Int in our model.
+        return "\(c.humidity)%"
+    }
+
+    private var weatherApiPressureText: String {
+        guard let c = weatherApiCurrentVM.current else { return "—" }
+        guard let p = c.pressure_in else { return "—" }
+        return String(format: "%.2f", p)
+    }
+
+    private var weatherApiPrecipText: String {
+        guard let c = weatherApiCurrentVM.current else { return "—" }
+        guard let p = c.precip_in else { return "—" }
+        return String(format: "%.2f in", p)
+    }
+
+    private var weatherApiConditionsText: String {
+        guard let c = weatherApiCurrentVM.current else { return "—" }
+        return c.condition.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var weatherApiWindDisplayText: String {
+        guard let c = weatherApiCurrentVM.current else { return "—" }
+
+        let w = Int((c.wind_mph ?? 0).rounded())
+        if w == 0 { return "CALM" }
+
+        let dir = (c.wind_dir ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let dirPart = dir.isEmpty ? "" : "\(dir) "
+
+        return "\(dirPart)\(w)"
+    }
+
+    // Unified UI-facing values
+    private var currentTempText: String {
+        shouldUseWeatherApiForCurrent ? weatherApiTempText : viewModel.temp
+    }
+
+    private var currentHumidityText: String {
+        // If WeatherAPI is driving current conditions, use its humidity directly.
+        if shouldUseWeatherApiForCurrent, let h = weatherApiCurrentVM.current?.humidity {
+            return "\(h)%"
+        }
+
+        // Otherwise use the view model string, but sanitize it hard.
+        var s = viewModel.humidity.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Placeholders
+        if s.isEmpty || s == "--" || s == "—" { return "--" }
+
+        // Strip Optional(...)
+        if s.hasPrefix("Optional(") {
+            s = s.replacingOccurrences(of: "Optional(", with: "")
+            if s.hasSuffix(")") { s.removeLast() }
+            s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // If it already has %, round any decimals inside it.
+        if s.hasSuffix("%") {
+            let raw = s.dropLast()
+            if let d = Double(raw) { return "\(Int(d.rounded()))%" }
+            return String(s)
+        }
+
+        // If it's numeric without %, round and append.
+        if let d = Double(s) {
+            return "\(Int(d.rounded()))%"
+        }
+
+        return s
+    }
+
+    private var currentPressureText: String {
+        shouldUseWeatherApiForCurrent ? weatherApiPressureText : viewModel.pressure
+    }
+
+    private var currentPrecipText: String {
+        shouldUseWeatherApiForCurrent ? weatherApiPrecipText : viewModel.precipitation
+    }
+
+    private var currentConditionsText: String {
+        shouldUseWeatherApiForCurrent ? weatherApiConditionsText : viewModel.conditions
+    }
+
+    private var currentWindDisplayText: String {
+        shouldUseWeatherApiForCurrent ? weatherApiWindDisplayText : viewModel.windDisplay
+    }
+    
+    
     // MARK: - Root view (extracted to help the compiler)
 
     private var rootView: some View {
         ZStack {
             YAWATheme.sky.ignoresSafeArea()
-            mainStack
+
+            VStack(spacing: 18) {
+                headerSection
+                    .padding(.top, 8)
+
+                ScrollView {
+                    forecastSection
+                        .padding(.bottom, 16)
+                }
+                .scrollIndicators(.hidden)   // 👈 iOS 16+
+                .refreshable {
+                    isManualRefreshing = true
+                    defer { isManualRefreshing = false }
+
+                    await refreshNow()
+                    if source == .noaa, !isInternationalFavorite { await refreshForecastNow() }
+                    successHaptic()
+                }
+
+                if showEasterEgg {
+                    easterEggOverlay
+                }
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .task { await onFirstAppearTask() }
-        .onReceive(locationManager.$coordinate) { coord in
-            onCoordinateChange(coord)
-        }
-        .onChange(of: scenePhase) { _, phase in
-            onScenePhaseChange(phase)
-        }
-        .onChange(of: selection.selectedFavorite?.id) { _, _ in
-            Task { await onFavoriteChanged() }
-        }
-        .onChange(of: sourceRaw) { _, newValue in
-            Task { await onSourceChanged(newValue) }
-        }
+        .onReceive(locationManager.$coordinate) { coord in onCoordinateChange(coord) }
+        .onChange(of: scenePhase) { _, phase in onScenePhaseChange(phase) }
+        .onChange(of: selection.selectedFavorite?.id) { _, _ in Task { await onFavoriteChanged() } }
+        .onChange(of: sourceRaw) { _, newValue in Task { await onSourceChanged(newValue) } }
+//        .onChange(of: selection.selectedFavorite) { _, newFav in
+//            if let fav = newFav {
+//                Task {
+//                    selectedFavoriteCountryCode = await locationManager.countryCode(for: fav.coordinate)
+//
+//                    // Force refresh so the card never shows stale results when switching quickly
+//                    if let coord = effectiveWeatherApiCoordinate {
+//                        await weatherApiForecastViewModel.refresh(for: coord)
+//                    }
+//                }
+//            } else {
+//                selectedFavoriteCountryCode = nil
+//
+//                // Returning to current location: refresh if WeatherAPI is active
+//                if let coord = effectiveWeatherApiCoordinate {
+//                    Task { await weatherApiForecastViewModel.refresh(for: coord) }
+//                }
+//            }
+//        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { topBarToolbar }
@@ -367,10 +537,10 @@ struct ContentView: View {
                 sourceRaw: $sourceRaw,
                 previousSourceRaw: $previousSourceRaw
             )
-            .presentationDetents([.fraction(0.85), .large])      // drawer height + pull to full
-            .presentationDragIndicator(.visible)                 // grabber
-            .presentationCornerRadius(28)                        // rounded top
-            .presentationBackground(.ultraThinMaterial)          // drawer vibe
+            .presentationDetents([.fraction(0.85), .large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
+            .presentationBackground(.ultraThinMaterial)
             .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.55)))
         }
         .sheet(item: $radarTarget) { target in
@@ -399,78 +569,32 @@ struct ContentView: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top) // ✅ keep width, don't force infinite height
     }
-
-//    private var forecastSection: some View {
-//        Group {
-////            Text("Daily Forecast")
-////                .font(.title3.weight(.semibold))
-////                .foregroundStyle(YAWATheme.textPrimary)
-////                .frame(maxWidth: .infinity, alignment: .center)
-//
-//            if source == .noaa {
-//                inlineForecastSection
-//                    .padding(.bottom, 12)
-//                    .frame(maxWidth: .infinity)
-//            } else {
-//                weatherApiForecastCard
-//                    .padding(.bottom, 12)
-//                    .frame(maxWidth: .infinity)
-//            }
-//        }
-//        .padding(.top, 6)
-//    }
     
     private var forecastSection: some View {
         Group {
+            let isInternationalFavorite: Bool = {
+                guard selection.selectedFavorite != nil else { return false }
+                if let code = selectedFavoriteCountryCode {
+                    return code.uppercased() != "US"
+                }
+                return false
+            }()
+
             if source == .noaa {
-                ScrollView(showsIndicators: false) {
-                    inlineForecastSection
-                        .padding(.bottom, 12)
-                        .frame(maxWidth: .infinity)
-                }
-                // ✅ This is the only scrolling region; it takes the remaining height.
-                .frame(maxWidth: .infinity)
-                .frame(maxHeight: .infinity)
-                .layoutPriority(1)
-                .refreshable {
-                    isManualRefreshing = true
-                    defer { isManualRefreshing = false }
-
-                    // In GPS mode, proactively ask for a fresh fix before refreshing.
-                    if selection.selectedFavorite == nil && source != .pws {
-                        locationManager.request()
-                    }
-
-                    await refreshNow()
-                    await refreshForecastNow()
-
-                    successHaptic()
-                }
-
-            } else {
-                // PWS / WeatherAPI forecast: keep it in a scroll container too
-                // so the overall screen doesn’t need to scroll.
-                ScrollView(showsIndicators: false) {
+                if isInternationalFavorite {
                     weatherApiForecastCard
-                        .padding(.bottom, 12)
-                        .frame(maxWidth: .infinity)
+                } else {
+                    inlineForecastSection
                 }
-                .frame(maxWidth: .infinity)
-                .frame(maxHeight: .infinity)
-                .layoutPriority(1)
-                .refreshable {
-                    isManualRefreshing = true
-                    defer { isManualRefreshing = false }
-
-                    await refreshNow()
-                    // (WeatherAPI card loads via .task(id: weatherApiCoordKey))
-                    successHaptic()
-                }
+            } else {
+                weatherApiForecastCard
             }
         }
         .padding(.top, 6)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity)
     }
     
     
@@ -511,7 +635,7 @@ struct ContentView: View {
         await Task.yield()
 
         await refreshNow()
-        if source == .noaa { await refreshForecastNow() }
+        if source == .noaa, !isInternationalFavorite { await refreshForecastNow() }
 
         recordRefresh(coord: locationManager.coordinate)
     }
@@ -535,7 +659,7 @@ struct ContentView: View {
             await Task.yield()
 
             await refreshNow()
-            if source == .noaa { await refreshForecastNow() }
+            if source == .noaa, !isInternationalFavorite { await refreshForecastNow() }
 
             recordRefresh(coord: coord)
         }
@@ -555,9 +679,32 @@ struct ContentView: View {
         forecastVM.setLoadingPlaceholders()
         await Task.yield()
 
-        await refreshNow()
-        await refreshForecastNow()
+        // Update country code for the selected favorite (nil when returning to GPS)
+        if let fav = selection.selectedFavorite {
+            selectedFavoriteCountryCode = await locationManager.countryCode(for: fav.coordinate)
+        } else {
+            selectedFavoriteCountryCode = nil
+        }
+
+        // Tiles/current conditions
+        await refreshCurrentIfNeeded()
+
+        // 7-day forecast card
+        let isInternationalFavorite =
+            selection.selectedFavorite != nil &&
+            (selectedFavoriteCountryCode?.uppercased() != "US")
+
+        if source == .pws || isInternationalFavorite {
+            if let coord = effectiveWeatherApiCoordinate {
+                await weatherApiForecastViewModel.refresh(for: coord)   // ✅ this is what you were missing
+            }
+        } else {
+            await refreshForecastNow() // NOAA-only
+        }
     }
+    
+    
+    
 
     @MainActor
     private func onSourceChanged(_ newValue: String) async {
@@ -1139,8 +1286,26 @@ struct ContentView: View {
                             isManualRefreshing = true
                             defer { isManualRefreshing = false }
 
-                            await refreshNow()
-                            if source == .noaa { await refreshForecastNow() }
+                            // ✅ Always refresh "current" (tiles) using the effective source
+                            await refreshCurrentIfNeeded()
+
+                            // ✅ Refresh the forecast card that is actually being displayed
+                            if source == .noaa {
+                                if !isInternationalFavorite {
+                                    await refreshForecastNow()      // NOAA forecast
+                                } else {
+                                    // WeatherAPI forecast refresh happens via its .task(id: weatherApiCoordKey),
+                                    // but if you want a true "force refresh" here, call it explicitly:
+                                    if let coord = effectiveWeatherApiCoordinate {
+                                        await weatherApiForecastViewModel.refresh(for: coord)
+                                    }
+                                }
+                            } else {
+                                // PWS mode forecast (WeatherAPI)
+                                if let coord = effectiveWeatherApiCoordinate {
+                                    await weatherApiForecastViewModel.refresh(for: coord)
+                                }
+                            }
 
                             successHaptic()
                         }
@@ -1185,8 +1350,8 @@ struct ContentView: View {
 
             // Left column: wind + humidity
             VStack(spacing: 14) {
-                miniTile("wind", .teal, viewModel.windDisplay)
-                miniTile("humidity.fill", .blue, viewModel.humidity)
+                miniTile("wind", .teal, currentWindDisplayText)
+                miniTile("humidity.fill", .blue, currentHumidityText)
             }
             .frame(maxWidth: .infinity)
 
@@ -1198,12 +1363,12 @@ struct ContentView: View {
                 if source == .noaa {
                     let hour = Calendar.current.component(.hour, from: Date())
                     let isNight = hour < 6 || hour >= 18
-                    let sym = conditionsSymbolAndColor(for: viewModel.conditions, isNight: isNight)
-                    miniTile(sym.symbol, sym.color, viewModel.conditions)
+                    let sym = conditionsSymbolAndColor(for: currentConditionsText, isNight: isNight)
+                    miniTile(sym.symbol, sym.color, currentConditionsText)
                 } else {
-                    miniTile("cloud.rain", .blue, viewModel.precipitation)
+                    miniTile("cloud.rain", .blue, currentPrecipText)
                 }
-                miniTile("gauge", .orange, viewModel.pressure)
+                miniTile("gauge", .orange, currentPressureText)
             }
             .frame(maxWidth: .infinity)
         }
@@ -1215,7 +1380,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             weatherApiForecastHeader
             weatherApiForecastBody
-            if source == .pws { weatherApiForecastFooter }
+            weatherApiForecastFooter
         }
         .padding(14)
         .background(YAWATheme.card)
@@ -1232,7 +1397,7 @@ struct ContentView: View {
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(YAWATheme.textSecondary)
 
-            Text("Station Forecast (from WeatherAPI)")
+            Text("7-day Forecast")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(YAWATheme.textPrimary)
 
@@ -1289,16 +1454,15 @@ struct ContentView: View {
     }
 
     private var weatherApiForecastFooter: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 8) {
             Divider().opacity(0.25)
 
-            Text("WeatherAPI rain chance may differ from NOAA PoP.")
+            Text("Source: weatherapi.com")
                 .font(.caption)
                 .foregroundStyle(YAWATheme.textTertiary)
-                .multilineTextAlignment(.leading)
-                .padding(.top, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 6)
         }
-        .padding(.top, 6)
     }
 
     // MARK: - Extracted row view (keeps type-checker happy)
@@ -1434,13 +1598,10 @@ struct ContentView: View {
 
             // Forecast rows
             if !forecastVM.periods.isEmpty {
-
-//                let sideCol: CGFloat = 120 // tweak 110–140 to taste
                 let forecastDays: [DailyForecast] =
                     Array(combineDayNight(Array(forecastVM.periods.prefix(14))).prefix(7))
 
                 ForEach(forecastDays, id: \.id) { d in
- //                   let sym = forecastSymbolAndColor(for: d.day.shortForecast, isDaytime: true)
                     let sym = forecastSymbolAndColor(
                         for: d.day.shortForecast,
                         detailedForecast: d.day.detailedForecast,
@@ -1517,11 +1678,15 @@ struct ContentView: View {
                     if d.id != forecastDays.last?.id {
                         Divider()
                             .opacity(0.5)
- //                           .overlay(YAWATheme.divider)   // <— use your theme divider opacity
                         }
                 }
-
             }
+            Divider().opacity(0.25)
+            Text("Source: NOAA")
+                .font(.caption)
+                .foregroundStyle(YAWATheme.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 6)
         }
         .padding(14)
         .background(YAWATheme.card)
@@ -1564,7 +1729,7 @@ struct ContentView: View {
                 Spacer(minLength: 8)
 
                 // Middle: temperature
-                Text(viewModel.temp)
+                Text(currentTempText)
                     .font(.system(size: tempFontSize, weight: .semibold))
                     .foregroundStyle(YAWATheme.textPrimary)
                     .monospacedDigit()
@@ -1627,10 +1792,116 @@ struct ContentView: View {
     
     // MARK: - Async refresh
 
+    private func refreshCurrentIfNeeded() async {
+        // Choose a coordinate for "current conditions"
+        let coord: CLLocationCoordinate2D?
+        let locationName: String?
+
+        if let fav = selection.selectedFavorite {
+            coord = fav.coordinate
+            locationName = fav.displayName
+        } else {
+            coord = locationManager.coordinate
+            locationName = nil
+        }
+
+        guard let coord else {
+            // Keep your existing behavior: show a clear message + allow user to recover.
+            viewModel.errorMessage = "Location unavailable."
+            return
+        }
+
+        // ✅ WeatherAPI current (international favorites OR user-selected PWS mode)
+        if shouldUseWeatherApiForCurrent {
+            viewModel.setLoadingPlaceholders()
+
+            await weatherApiCurrentVM.refresh(for: coord)
+
+            if let msg = weatherApiCurrentVM.errorMessage {
+                viewModel.errorMessage = msg
+                return
+            }
+
+            viewModel.errorMessage = nil
+
+            // ✅ THIS is what makes the tiles populate
+            applyWeatherApiCurrentToTiles(locationLabelOverride: weatherApiCurrentVM.locationLabel)
+
+            return
+        }
+
+        // ✅ Otherwise: your existing current refresh logic
+        await viewModel.refreshCurrentConditions(
+            source: source,
+            coord: coord,
+            locationName: locationName
+        )
+    }
+    
+    @MainActor
+    private func applyWeatherApiCurrentToTiles(locationLabelOverride: String? = nil) {
+        guard let c = weatherApiCurrentVM.current else { return }
+
+        // Temperature
+        viewModel.temp = "\(Int(c.temp_f.rounded()))°"
+
+        // Humidity (optional)
+        if let h = c.humidity {
+            viewModel.humidity = "\(h)%"
+        } else {
+            viewModel.humidity = "--"
+        }
+
+        // Conditions text
+        viewModel.conditions = c.condition.text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Wind (optional) + direction (optional)
+        if let wind = c.wind_mph {
+            let w = Int(wind.rounded())
+            viewModel.wind = (w == 0) ? "CALM" : "\(w) mph"
+        } else {
+            viewModel.wind = "--"
+        }
+
+        // WeatherAPI current payload (as defined) does not include gust MPH or wind degrees.
+        // Keep these empty/neutral so your UI stays consistent.
+        viewModel.windGust = ""
+        viewModel.windDirection = (c.wind_dir ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        viewModel.windDirectionDegrees = 0
+
+        // Pressure / precip (optional)
+        if let p = c.pressure_in {
+            viewModel.pressure = String(format: "%.2f", p)
+        } else {
+            viewModel.pressure = "--"
+        }
+
+        if let pr = c.precip_in {
+            viewModel.precipitation = String(format: "%.2f in", pr)
+        } else {
+            viewModel.precipitation = "0.00 in"
+        }
+
+        viewModel.lastUpdated = Date()
+
+        // Header label: for international favorites, WeatherAPI has a nicer label
+        if let label = locationLabelOverride, !label.isEmpty {
+            viewModel.currentLocationLabel = label
+        }
+    }
+    
+    
+    
     private func refreshNow() async {
+        // Effective current refresh for tiles:
+        // - WeatherAPI current when appropriate
+        // - otherwise NOAA current
+        await refreshCurrentIfNeeded()
+    }
+
+    private func refreshNOAACurrent() async {
         if let f = selection.selectedFavorite {
- //           print("🛰️ NOAA refresh → favorite \(f.displayName) lat=\(f.coordinate.latitude), lon=\(f.coordinate.longitude)")
-            // Favorites always imply NOAA
+    //        print("🛰️ NOAA refresh → favorite \(f.displayName) lat=\(f.coordinate.latitude), lon=\(f.coordinate.longitude)")
             await viewModel.fetchCurrentFromNOAA(
                 lat: f.coordinate.latitude,
                 lon: f.coordinate.longitude,
