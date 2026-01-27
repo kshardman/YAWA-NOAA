@@ -1021,8 +1021,8 @@ final class WeatherAPIForecastViewModel: ObservableObject {
 
                 // Build detail text using the shifted low
                 var lines: [String] = []
-                lines.append(r.conditionText)
-                lines.append("High \(r.hiF)° / Low \(shiftedLo)°")
+//                lines.append(r.conditionText)
+//                lines.append("High \(r.hiF)° / Low \(shiftedLo)°")
 
                 if let chance = r.chanceRain {
                     lines.append("Chance of rain: \(chance)%")

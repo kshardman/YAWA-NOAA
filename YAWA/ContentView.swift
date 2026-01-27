@@ -148,7 +148,7 @@ struct ContentView: View {
     private enum DetailBody {
         case text(String)
         case alert(description: String?, instructions: [String], severity: String?, issuedAt: Date?)
-        case forecast(day: String?, night: String?, dayDate: Date?, hourly: [(date: Date, tempF: Double)])
+        case forecast(day: String?, night: String?, dayDate: Date?, hiF: Int?, loF: Int?, hourly: [(date: Date, tempF: Double)])
     }
 
     private struct DetailPayload: Identifiable {
@@ -171,6 +171,8 @@ struct ContentView: View {
             day: String?,
             night: String?,
             dayDate: Date?,
+            hiF: Int? = nil,
+            loF: Int? = nil,
             hourly: [(date: Date, tempF: Double)]
         ) {
             self.title = title
@@ -178,6 +180,8 @@ struct ContentView: View {
                 day: day,
                 night: night,
                 dayDate: dayDate,
+                hiF: hiF,
+                loF: loF,
                 hourly: hourly
             )
         }
@@ -826,8 +830,11 @@ struct ContentView: View {
         title: String,
         day: String,
         night: String?,
+        hiF: Int?,
+        loF: Int?,
         hourly: [(date: Date, tempF: Double)],
-        useCelsius: Bool = false
+        useCelsius: Bool = false,
+        isNOAA: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
 
@@ -855,11 +862,10 @@ struct ContentView: View {
             // Day sub-card
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Image(systemName: "sun.max.fill")
+                    Image(systemName: isNOAA ? "sun.max.fill" : "doc.text.fill")
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(YAWATheme.textSecondary)
-
-                    Text("Day")
+                    Text(isNOAA ? "Day" : "Summary")
                         .font(.headline)
                         .foregroundStyle(YAWATheme.textPrimary)
                 }
@@ -906,11 +912,11 @@ struct ContentView: View {
             if hourly.count >= 2 {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
-                        Image(systemName: "clock")
+                        Image(systemName: "clock.fill")
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(YAWATheme.textSecondary)
 
-                        Text("Hourly")
+                        Text("Hourly Temps")
                             .font(.headline)
                             .foregroundStyle(YAWATheme.textPrimary)
 
@@ -925,9 +931,10 @@ struct ContentView: View {
                     let minT = hourlyTemps.min() ?? 0
                     let maxT = hourlyTemps.max() ?? 0
 
-                    // Round to nice 10° bounds so axis ticks land on clean values.
-                    let yMin = floor(minT / 10.0) * 10.0
-                    let yMax = ceil(maxT / 10.0) * 10.0
+                    // Round to nice bounds so axis ticks land on clean values.
+                    let step: Double = useCelsius ? 5.0 : 10.0
+                    let yMin = floor(minT / step) * step
+                    let yMax = ceil(maxT / step) * step
 
                     let unitLabel = useCelsius ? "Temp (°C)" : "Temp (°F)"
 
@@ -965,7 +972,7 @@ struct ContentView: View {
                     }
                     .chartXAxisLabel("Time (\(title))", position: .bottom, alignment: .center)
                     .chartYAxis {
-                        let yValues = Array(stride(from: yMin, through: yMax, by: 5))
+                        let yValues = Array(stride(from: yMin, through: yMax, by: step))
                         AxisMarks(values: yValues) { value in
                             AxisGridLine().foregroundStyle(YAWATheme.textSecondary.opacity(0.15))
                             AxisTick().foregroundStyle(YAWATheme.textSecondary.opacity(0.35))
@@ -1051,7 +1058,7 @@ struct ContentView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
-                    case .forecast(let day, let night, let dayDate, let hourly):
+                    case .forecast(let day, let night, let dayDate, let hiF, let loF, let hourly):
                         let safeDay = (day ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                         let safeNight = (night ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -1063,12 +1070,20 @@ struct ContentView: View {
 
                         let useCelsius = isInternationalFavorite
 
+                        // Safety: only trust provided hi/lo when this is a WeatherAPI-driven detail payload.
+                        // NOAA detail payloads have a dayDate; WeatherAPI ones do not.
+                        let trustedHiF: Int? = (dayDate == nil) ? hiF : nil
+                        let trustedLoF: Int? = (dayDate == nil) ? loF : nil
+
                         forecastDetailCard(
                             title: detail.title,
                             day: safeDay,
                             night: safeNight.isEmpty ? nil : safeNight,
+                            hiF: trustedHiF,
+                            loF: trustedLoF,
                             hourly: resolvedHourly,
-                            useCelsius: useCelsius
+                            useCelsius: useCelsius,
+                            isNOAA: dayDate != nil
                         )
                         
                         .task(id: dayDate) {
@@ -1485,6 +1500,8 @@ struct ContentView: View {
                         day: parts.day,
                         night: parts.night,
                         dayDate: nil,
+                        hiF: d.hiF,
+                        loF: d.loF,
                         hourly: hourly.map { (date: $0.date, tempF: $0.tempF) }
                     )
                 }
@@ -1712,6 +1729,8 @@ struct ContentView: View {
                             day: dayText,
                             night: normalizedNight.isEmpty ? nil : normalizedNight,
                             dayDate: d.startDate,
+                            hiF: nil,
+                            loF: nil,
                             hourly: []
                         )
                     }
