@@ -11,6 +11,11 @@ import CoreLocation
 import Combine
 import MapKit
 import Foundation
+import UIKit
+
+extension Notification.Name {
+    static let yawaHomeSettingsDidChange = Notification.Name("yawaHomeSettingsDidChange")
+}
 
 //city search
 
@@ -73,6 +78,13 @@ final class LocationManager: NSObject, ObservableObject {
     // Cache reverse-geocoded country codes for favorites (avoid repeated geocoder calls)
     private var countryCodeCache: [String: String] = [:]
 
+    private var homeEnabledCache: Bool = false
+    private var homeLatCache: Double = 0
+    private var homeLonCache: Double = 0
+
+    private var homeSettingsObserver: AnyCancellable?
+    private var foregroundObserver: AnyCancellable?
+
     private func cacheKey(for coord: CLLocationCoordinate2D) -> String {
         // Round to reduce churn from tiny coordinate jitter
         let lat = String(format: "%.4f", coord.latitude)
@@ -105,13 +117,12 @@ final class LocationManager: NSObject, ObservableObject {
     
     // MARK: - Home label (app-defined)
 
-    private let homeRadiusMeters: CLLocationDistance = 900   // tune: ~0.5–0.6 mile
+    private let homeRadiusMeters: CLLocationDistance = 100   // fixed: 100 meters
 
     private var homeCoordinate: CLLocationCoordinate2D? {
-        let d = UserDefaults.standard
-        guard d.bool(forKey: "homeIsSet") else { return nil }
-        let lat = d.double(forKey: "homeLat")
-        let lon = d.double(forKey: "homeLon")
+        guard homeEnabledCache else { return nil }
+        let lat = homeLatCache
+        let lon = homeLonCache
         guard !(lat == 0 && lon == 0) else { return nil }
         return CLLocationCoordinate2D(latitude: lat, longitude: lon)
     }
@@ -121,6 +132,13 @@ final class LocationManager: NSObject, ObservableObject {
         let homeLoc = CLLocation(latitude: home.latitude, longitude: home.longitude)
         return location.distance(from: homeLoc) <= homeRadiusMeters
     }
+
+    /// True when the current GPS fix is within the Home radius.
+    var isCurrentlyAtHome: Bool {
+        guard let c = coordinate else { return false }
+        let loc = CLLocation(latitude: c.latitude, longitude: c.longitude)
+        return isAtHome(loc)
+    }
     
     
 
@@ -129,6 +147,30 @@ final class LocationManager: NSObject, ObservableObject {
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         manager.distanceFilter = 100 // meters (helps reduce noise)
+        
+        let d = UserDefaults.standard
+        homeEnabledCache = d.bool(forKey: "homeEnabled")
+        homeLatCache = d.double(forKey: "homeLat")
+        homeLonCache = d.double(forKey: "homeLon")
+
+        homeSettingsObserver = NotificationCenter.default
+            .publisher(for: .yawaHomeSettingsDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let d = UserDefaults.standard
+                self.homeEnabledCache = d.bool(forKey: "homeEnabled")
+                self.homeLatCache = d.double(forKey: "homeLat")
+                self.homeLonCache = d.double(forKey: "homeLon")
+                self.applyHomeLabelToCurrentFix(forceGeocode: true)
+            }
+
+        foregroundObserver = NotificationCenter.default
+            .publisher(for: UIApplication.willEnterForegroundNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.applyHomeLabelToCurrentFix(forceGeocode: false)
+            }
     }
 
     /// Call on launch / when app becomes active
@@ -215,6 +257,23 @@ final class LocationManager: NSObject, ObservableObject {
             else { self.locationName = nil }
         } catch {
             // silent fail is fine
+        }
+    }
+
+    private func applyHomeLabelToCurrentFix(forceGeocode: Bool) {
+        guard let c = coordinate else { return }
+        let loc = CLLocation(latitude: c.latitude, longitude: c.longitude)
+
+        if forceGeocode {
+            lastGeocodedCoord = nil
+        }
+
+        if isAtHome(loc) {
+            locationName = "Home"
+        } else {
+            Task { [weak self] in
+                await self?.reverseGeocodeIfNeeded(for: loc)
+            }
         }
     }
 }

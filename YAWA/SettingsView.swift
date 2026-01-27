@@ -8,12 +8,17 @@
 import SwiftUI
 import UIKit
 import UserNotifications
+import CoreLocation
 
 struct SettingsView: View {
     @AppStorage("pwsStationID") private var stationID: String = ""
     @AppStorage("pwsApiKey") private var apiKey: String = ""
 
     @AppStorage("weatherApiKey") private var weatherApiKey: String = ""
+
+    @AppStorage("homeEnabled") private var homeEnabled: Bool = false
+    @AppStorage("homeLat") private var homeLat: Double = 0
+    @AppStorage("homeLon") private var homeLon: Double = 0
 
     // One-time defaults from bundled config.plist (optional)
     @State private var loadedDefaults = false
@@ -46,6 +51,7 @@ struct SettingsView: View {
     }
 
     @ObservedObject private var notifications = NotificationsManager.shared
+    @EnvironmentObject private var locationManager: LocationManager
 
     var body: some View {
         NavigationStack {
@@ -55,6 +61,7 @@ struct SettingsView: View {
 
                 List {
                     notificationsSection
+                    homeSection
                     sourceSection
                     privacySection
 //                    attributionSection
@@ -125,9 +132,84 @@ struct SettingsView: View {
     }
 }
 
+
 // MARK: - Sections
 
 private extension SettingsView {
+    var homeSection: some View {
+        let radiusMeters: Double = 100
+        let hasFix = locationManager.coordinate != nil
+        let isSet = homeEnabled && !(homeLat == 0 && homeLon == 0)
+
+        return Section {
+            Button {
+                guard let c = locationManager.coordinate else { return }
+                homeLat = c.latitude
+                homeLon = c.longitude
+                homeEnabled = true
+                UserDefaults.standard.synchronize()
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .yawaHomeSettingsDidChange, object: nil)
+                }
+            } label: {
+                HStack {
+                    Label("Set Home to Current Location", systemImage: "house.fill")
+                        .foregroundStyle(YAWATheme.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasFix)
+            .opacity(hasFix ? 1.0 : 0.55)
+
+            if isSet {
+                HStack {
+                    Text("Home is set")
+                        .foregroundStyle(YAWATheme.textPrimary)
+                    Spacer()
+                    Text("\(Int(radiusMeters)) m")
+                        .foregroundStyle(YAWATheme.textSecondary)
+                        .monospacedDigit()
+                }
+                .font(.subheadline)
+
+                Button(role: .destructive) {
+                    homeEnabled = false
+                    homeLat = 0
+                    homeLon = 0
+                    UserDefaults.standard.synchronize()
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(name: .yawaHomeSettingsDidChange, object: nil)
+                    }
+                } label: {
+                    Label("Clear Home", systemImage: "trash")
+                }
+            } else {
+                HStack {
+                    Text("Home is not set")
+                        .foregroundStyle(YAWATheme.textSecondary)
+                    Spacer()
+                    Text(hasFix ? "Ready" : "Waiting for GPS")
+                        .foregroundStyle(YAWATheme.textSecondary)
+                }
+                .font(.subheadline)
+            }
+        } header: {
+            Text("Home")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(YAWATheme.textPrimary)
+        } footer: {
+            Text("When you’re within 100 meters of Home, YAWA can treat your current GPS location as \"Home\".")
+                .foregroundStyle(YAWATheme.textSecondary)
+        }
+        .textCase(nil)
+        .listRowBackground(YAWATheme.card2)
+        .listRowSeparator(.hidden)
+    }
     var privacySection: some View {
         Section(header: Text("Privacy").font(.subheadline.weight(.semibold)).foregroundStyle(YAWATheme.textPrimary)) {
             VStack(alignment: .leading, spacing: 8) {
@@ -476,3 +558,4 @@ private extension SettingsView {
         case missingKey(String)
     }
 }
+
