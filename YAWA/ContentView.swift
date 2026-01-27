@@ -376,7 +376,16 @@ struct ContentView: View {
 
     private var weatherApiTempText: String {
         guard let c = weatherApiCurrentVM.current else { return "—" }
-        return "\(Int((c.temp_f ?? 0).rounded()))°"
+
+        let useCelsius =
+            selection.selectedFavorite != nil &&
+            selectedFavoriteCountryCode?.uppercased() != "US"
+
+        if useCelsius {
+            return "\(Int(c.temp_c.rounded()))°C"
+        } else {
+            return "\(Int(c.temp_f.rounded()))°"
+        }
     }
 
     private var weatherApiHumidityText: String {
@@ -406,13 +415,21 @@ struct ContentView: View {
     private var weatherApiWindDisplayText: String {
         guard let c = weatherApiCurrentVM.current else { return "—" }
 
-        let w = Int((c.wind_mph ?? 0).rounded())
+        let useMetric =
+            selection.selectedFavorite != nil &&
+            selectedFavoriteCountryCode?.uppercased() != "US"
+
+        let mph = c.wind_mph ?? 0
+        let speedValue = useMetric ? (mph * 1.60934) : mph
+        let w = Int(speedValue.rounded())
+
         if w == 0 { return "CALM" }
 
         let dir = (c.wind_dir ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let dirPart = dir.isEmpty ? "" : "\(dir) "
 
-        return "\(dirPart)\(w)"
+        let unit = useMetric ? "km/h" : "mph"
+        return "\(dirPart)\(w) \(unit)"
     }
 
     // Unified UI-facing values
@@ -805,7 +822,13 @@ struct ContentView: View {
         return (day: dayOnly.isEmpty ? t : dayOnly, night: nil)
     }
 
-    private func forecastDetailCard(title: String, day: String, night: String?, hourly: [(date: Date, tempF: Double)]) -> some View {
+    private func forecastDetailCard(
+        title: String,
+        day: String,
+        night: String?,
+        hourly: [(date: Date, tempF: Double)],
+        useCelsius: Bool = false
+    ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
 
             // Header row (matches Daily Forecast card vibe)
@@ -894,18 +917,30 @@ struct ContentView: View {
                         Spacer()
                     }
 
-                    let temps = hourly.map { $0.tempF }
-                    let minT = (temps.min() ?? 0)
-                    let maxT = (temps.max() ?? 0)
+                    // Display hourly temps in °C for international favorites, otherwise °F.
+                    let hourlyTemps: [Double] = hourly.map { p in
+                        useCelsius ? (p.tempF - 32.0) * 5.0 / 9.0 : p.tempF
+                    }
 
-                    // Round to nice 10°F bounds so axis ticks land on clean values.
+                    let minT = hourlyTemps.min() ?? 0
+                    let maxT = hourlyTemps.max() ?? 0
+
+                    // Round to nice 10° bounds so axis ticks land on clean values.
                     let yMin = floor(minT / 10.0) * 10.0
                     let yMax = ceil(maxT / 10.0) * 10.0
 
-                    Chart(hourly, id: \.date) { p in
+                    let unitLabel = useCelsius ? "Temp (°C)" : "Temp (°F)"
+
+                    // Zip dates with converted temps so we chart the right numbers
+                    let series = Array(zip(hourly, hourlyTemps))
+
+                    Chart(series, id: \.0.date) { pair in
+                        let p = pair.0
+                        let t = pair.1
+
                         LineMark(
                             x: .value("Time", p.date),
-                            y: .value("Temp (°F)", p.tempF)
+                            y: .value(unitLabel, t)
                         )
                         .interpolationMethod(.catmullRom)
                     }
@@ -1026,12 +1061,16 @@ struct ContentView: View {
                             ? hourly
                             : (dayDate != nil ? noaaHourlyVM.hourlyTuples(for: dayDate!) : [])
 
+                        let useCelsius = isInternationalFavorite
+
                         forecastDetailCard(
                             title: detail.title,
                             day: safeDay,
                             night: safeNight.isEmpty ? nil : safeNight,
-                            hourly: resolvedHourly
+                            hourly: resolvedHourly,
+                            useCelsius: useCelsius
                         )
+                        
                         .task(id: dayDate) {
                             // Kick off NOAA hourly loading on-demand for the tapped day.
                             guard source == .noaa else { return }
@@ -1433,8 +1472,8 @@ struct ContentView: View {
                 dateText: d.dateText,
                 conditionText: d.conditionText,
                 chanceRain: d.chanceRain,
-                hiF: d.hiF,
-                loF: d.loF,
+                hi: isInternationalFavorite ? Int(((Double(d.hiF) - 32.0) * 5.0 / 9.0).rounded()) : d.hiF,
+                lo: isInternationalFavorite ? Int(((Double(d.loF) - 32.0) * 5.0 / 9.0).rounded()) : d.loF,
                 isLast: index == weatherApiForecastViewModel.days.count - 1,
                 sideCol: sideCol,
                 onTap: {
@@ -1475,8 +1514,8 @@ struct ContentView: View {
         let dateText: String
         let conditionText: String
         let chanceRain: Int?
-        let hiF: Int
-        let loF: Int
+        let hi: Int
+        let lo: Int
 
         let isLast: Bool
         let sideCol: CGFloat
@@ -1522,7 +1561,7 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
 
                     // Right column (fixed)
-                    Text("H \(hiF)°  L \(loF)°")
+                    Text("H \(hi)°  L \(lo)°")
                         .font(.subheadline.weight(.semibold))
                         .monospacedDigit()
                         .foregroundStyle(YAWATheme.textPrimary)
@@ -1645,9 +1684,12 @@ struct ContentView: View {
                         }
                         .frame(height: 34, alignment: .center)          // ✅ locks vertical centering
                         .frame(maxWidth: .infinity, alignment: .center) // keeps true center column
-                        
-                        // Right column (fixed)
-                        Text("H \(d.highText)  L \(d.lowText)")
+
+                        // Right column (fixed) — restore NOAA high/low, with Optional-safe display
+                        let hiText = tempDisplay(d.day.temperature)
+                        let loText = tempDisplay(d.night?.temperature ?? d.day.temperature)
+
+                        Text("H \(hiText)  L \(loText)")
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
                             .foregroundStyle(YAWATheme.textPrimary)
@@ -1729,7 +1771,7 @@ struct ContentView: View {
                 Spacer(minLength: 8)
 
                 // Middle: temperature
-                Text(currentTempText)
+                tempTextView
                     .font(.system(size: tempFontSize, weight: .semibold))
                     .foregroundStyle(YAWATheme.textPrimary)
                     .monospacedDigit()
@@ -1765,6 +1807,37 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
+    private var tempTextView: some View {
+        let raw = currentTempText   // e.g. "-28°C" or "72°"
+
+        // Normalize so we don't accidentally keep a space before the unit ("-28 °C")
+        let cleaned = raw
+            .replacingOccurrences(of: " °C", with: "°C")
+            .replacingOccurrences(of: " °", with: "°")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let isCelsius = cleaned.contains("°C")
+
+        // Split numeric part from unit and trim any leftover whitespace
+        let number = cleaned
+            .replacingOccurrences(of: "°C", with: "")
+            .replacingOccurrences(of: "°", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(number)
+                .font(.system(size: tempFontSize, weight: .semibold))
+                .kerning(-1.0)   // subtle tightening, looks better than mono here
+
+            // Superscript-like unit to save horizontal space
+            Text(isCelsius ? "°C" : "°")
+                .font(.system(size: tempFontSize * 0.42, weight: .semibold))
+                .baselineOffset(tempFontSize * 0.52)
+        }
+        .foregroundStyle(YAWATheme.textPrimary)
+    }
+    
+    
 
     private func miniTile(_ systemImage: String, _ color: Color, _ value: String) -> some View {
         VStack(spacing: 8) {
@@ -1843,7 +1916,11 @@ struct ContentView: View {
         guard let c = weatherApiCurrentVM.current else { return }
 
         // Temperature
-        viewModel.temp = "\(Int(c.temp_f.rounded()))°"
+        if isInternationalFavorite {
+            viewModel.temp = "\(Int(c.temp_c.rounded()))°C"
+        } else {
+            viewModel.temp = "\(Int(c.temp_f.rounded()))°"
+        }
 
         // Humidity (optional)
         if let h = c.humidity {
@@ -1856,9 +1933,15 @@ struct ContentView: View {
         viewModel.conditions = c.condition.text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Wind (optional) + direction (optional)
-        if let wind = c.wind_mph {
-            let w = Int(wind.rounded())
-            viewModel.wind = (w == 0) ? "CALM" : "\(w) mph"
+        if let mph = c.wind_mph {
+            if isInternationalFavorite {
+                let kph = mph * 1.60934
+                let w = Int(kph.rounded())
+                viewModel.wind = (w == 0) ? "CALM" : "\(w) km/h"
+            } else {
+                let w = Int(mph.rounded())
+                viewModel.wind = (w == 0) ? "CALM" : "\(w) mph"
+            }
         } else {
             viewModel.wind = "--"
         }
@@ -1937,6 +2020,11 @@ struct ContentView: View {
         f.locale = .current
         f.setLocalizedDateFormatFromTemplate("EEE") // Mon, Tue, etc.
         return f.string(from: date)
+    }
+
+    private func tempDisplay(_ t: Int?) -> String {
+        guard let t else { return "—" }
+        return "\(t)°"
     }
     
     

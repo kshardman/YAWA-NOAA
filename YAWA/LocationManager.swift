@@ -559,7 +559,11 @@ struct WeatherAPICurrentResponse: Decodable {
 
     struct Current: Decodable {
         let temp_f: Double
+        let temp_c: Double
+
         let feelslike_f: Double?
+        let feelslike_c: Double?
+
         let humidity: Int?
         let wind_mph: Double?
         let wind_dir: String?
