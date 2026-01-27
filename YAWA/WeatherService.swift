@@ -22,14 +22,14 @@ struct WeatherService {
 
     struct Observation: Decodable {
         struct Imperial: Decodable {
-            let temp: Double
-            let windSpeed: Double
-            let pressure: Double
-            let precipTotal: Double
-            let windGust: Double
+            let temp: Double?
+            let windSpeed: Double?
+            let pressure: Double?
+            let precipTotal: Double?
+            let windGust: Double?
         }
-        let winddir: Double
-        let humidity: Double
+        let winddir: Double?
+        let humidity: Double?
         let imperial: Imperial
         let lat: Double?
         let lon: Double?
@@ -82,6 +82,7 @@ struct WeatherService {
             apiKey = cfgKey
         }
 
+
         var comps = URLComponents()
         comps.scheme = "https"
         comps.host = "api.weather.com"
@@ -103,11 +104,13 @@ struct WeatherService {
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
+
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw ServiceError.httpStatus(http.statusCode)
         }
 
         let decoded = try JSONDecoder().decode(WeatherResponse.self, from: data)
+
         guard let obs = decoded.observations.first else {
             throw ServiceError.noObservations
         }
@@ -117,18 +120,23 @@ struct WeatherService {
             defaults.set(lon, forKey: "pwsStationLon")
         }
 
-        let windDeg = Int(obs.winddir)
+        // If Weather.com returns an observation shell with no actual values, treat it as missing.
+        if obs.imperial.temp == nil && obs.humidity == nil {
+            throw ServiceError.noObservations
+        }
+
+        let windDeg = Int((obs.winddir ?? 0).rounded())
         let windText = compassDirection(from: windDeg)
 
         return Snapshot(
-            tempF: Int(obs.imperial.temp),
-            humidityPct: Int(obs.humidity),
-            windSpeed: Int(obs.imperial.windSpeed),
-            windGust: Int(obs.imperial.windGust),
+            tempF: Int((obs.imperial.temp ?? 0).rounded()),
+            humidityPct: Int((obs.humidity ?? 0).rounded()),
+            windSpeed: Int((obs.imperial.windSpeed ?? 0).rounded()),
+            windGust: Int((obs.imperial.windGust ?? 0).rounded()),
             windDirDegrees: windDeg,
             windDirText: windText,
-            pressure: String(format: "%.2f", obs.imperial.pressure),
-            precip: String(format: "%.2f", obs.imperial.precipTotal),
+            pressure: String(format: "%.2f", (obs.imperial.pressure ?? 0)),
+            precip: String(format: "%.2f", (obs.imperial.precipTotal ?? 0)),
             lastUpdated: Date(),
             stationLat: obs.lat,
             stationLon: obs.lon

@@ -118,10 +118,19 @@ final class WeatherViewModel: ObservableObject {
     }
  
     // MARK: - PWS helpers
-       func loadPwsLabelIfNeeded() {
-           guard pwsLabel.isEmpty else { return }
-           pwsLabel = (try? configValue("stationID")) ?? ""
-       }
+    func loadPwsLabelIfNeeded() {
+        guard pwsLabel.isEmpty else { return }
+
+        let sid = (UserDefaults.standard.string(forKey: "pwsStationID") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !sid.isEmpty {
+            pwsLabel = sid
+        } else {
+            // Fallback to bundled config.plist for backwards compatibility
+            pwsLabel = (try? configValue("stationID")) ?? ""
+        }
+    }
 
     // MARK: - Derived UI state
 
@@ -156,7 +165,22 @@ final class WeatherViewModel: ObservableObject {
 
         case .pws:
             loadPwsLabelIfNeeded()
-            _ = await fetchWeather(force: true)
+            // Don’t blank tiles during refresh; keep last known PWS values while fetching.
+            errorMessage = nil
+
+            do {
+                let snap = try await service.fetchCurrent()
+                apply(snap)
+                WeatherCache.save(snap)
+                lastSuccess = Date()
+                errorMessage = nil
+            } catch {
+                // Treat cancellations as normal (don’t show an error)
+                if error is CancellationError { return }
+                if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
+
+                errorMessage = userFriendly(error)
+            }
         }
     }
     
@@ -239,7 +263,7 @@ final class WeatherViewModel: ObservableObject {
 
             // Humidity (%)
             if let h = o.relativeHumidity?.value {
-                humidity = "\(h)%"
+                humidity = "\(Int(h.rounded()))%"
             } else {
                 humidity = "—"
             }
@@ -393,4 +417,3 @@ enum WeatherCache {
         return try? JSONDecoder().decode(WeatherService.Snapshot.self, from: data)
     }
 }
-

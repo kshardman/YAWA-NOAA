@@ -86,21 +86,38 @@ struct ContentView: View {
     
     @StateObject private var weatherApiCurrentVM = WeatherAPICurrentViewModel()
     
+////    private var effectiveWeatherApiCoordinate: CLLocationCoordinate2D? {
+////        // In PWS mode, anchor WeatherAPI forecast to the station coordinate (published by WeatherViewModel)
+////        if source == .pws {
+////            return viewModel.pwsStationCoordinate
+////        }
+////        // Otherwise follow the active (GPS/favorite) coordinate
+////        return locationManager.coordinate
+////    }
+//
 //    private var effectiveWeatherApiCoordinate: CLLocationCoordinate2D? {
-//        // In PWS mode, anchor WeatherAPI forecast to the station coordinate (published by WeatherViewModel)
-//        if source == .pws {
-//            return viewModel.pwsStationCoordinate
+//        if let fav = selection.selectedFavorite {
+//            return fav.coordinate
 //        }
-//        // Otherwise follow the active (GPS/favorite) coordinate
 //        return locationManager.coordinate
 //    }
-    
+ 
     private var effectiveWeatherApiCoordinate: CLLocationCoordinate2D? {
+        // In PWS mode, anchor WeatherAPI current + forecast to the station coordinate.
+        if source == .pws {
+            return viewModel.pwsStationCoordinate
+        }
+
+        // Favorites: use the favorite coordinate.
         if let fav = selection.selectedFavorite {
             return fav.coordinate
         }
+
+        // Otherwise follow the active GPS coordinate.
         return locationManager.coordinate
     }
+    
+    
 
 //    private var weatherApiCoordKey: String {
 //        guard let c = effectiveWeatherApiCoordinate else { return "" }
@@ -273,6 +290,7 @@ struct ContentView: View {
 
     @AppStorage("currentConditionsSource")
     private var sourceRaw: String = CurrentConditionsSource.noaa.rawValue
+    @AppStorage("pwsStationID") private var pwsStationID: String = ""
 
     private var source: CurrentConditionsSource {
         get { CurrentConditionsSource(rawValue: sourceRaw) ?? .noaa }
@@ -394,9 +412,8 @@ struct ContentView: View {
 
     private var weatherApiHumidityText: String {
         guard let c = weatherApiCurrentVM.current else { return "—" }
-
-        // WeatherAPI humidity is already an Int in our model.
-        return "\(c.humidity)%"
+        guard let h = c.humidity else { return "—" }
+        return "\(h)%"
     }
 
     private var weatherApiPressureText: String {
@@ -436,61 +453,6 @@ struct ContentView: View {
         return "\(dirPart)\(w) \(unit)"
     }
 
-    // Unified UI-facing values
-    private var currentTempText: String {
-        shouldUseWeatherApiForCurrent ? weatherApiTempText : viewModel.temp
-    }
-
-    private var currentHumidityText: String {
-        // If WeatherAPI is driving current conditions, use its humidity directly.
-        if shouldUseWeatherApiForCurrent, let h = weatherApiCurrentVM.current?.humidity {
-            return "\(h)%"
-        }
-
-        // Otherwise use the view model string, but sanitize it hard.
-        var s = viewModel.humidity.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Placeholders
-        if s.isEmpty || s == "--" || s == "—" { return "--" }
-
-        // Strip Optional(...)
-        if s.hasPrefix("Optional(") {
-            s = s.replacingOccurrences(of: "Optional(", with: "")
-            if s.hasSuffix(")") { s.removeLast() }
-            s = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        // If it already has %, round any decimals inside it.
-        if s.hasSuffix("%") {
-            let raw = s.dropLast()
-            if let d = Double(raw) { return "\(Int(d.rounded()))%" }
-            return String(s)
-        }
-
-        // If it's numeric without %, round and append.
-        if let d = Double(s) {
-            return "\(Int(d.rounded()))%"
-        }
-
-        return s
-    }
-
-    private var currentPressureText: String {
-        shouldUseWeatherApiForCurrent ? weatherApiPressureText : viewModel.pressure
-    }
-
-    private var currentPrecipText: String {
-        shouldUseWeatherApiForCurrent ? weatherApiPrecipText : viewModel.precipitation
-    }
-
-    private var currentConditionsText: String {
-        shouldUseWeatherApiForCurrent ? weatherApiConditionsText : viewModel.conditions
-    }
-
-    private var currentWindDisplayText: String {
-        shouldUseWeatherApiForCurrent ? weatherApiWindDisplayText : viewModel.windDisplay
-    }
-    
     
     // MARK: - Root view (extracted to help the compiler)
 
@@ -528,25 +490,6 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in onScenePhaseChange(phase) }
         .onChange(of: selection.selectedFavorite?.id) { _, _ in Task { await onFavoriteChanged() } }
         .onChange(of: sourceRaw) { _, newValue in Task { await onSourceChanged(newValue) } }
-//        .onChange(of: selection.selectedFavorite) { _, newFav in
-//            if let fav = newFav {
-//                Task {
-//                    selectedFavoriteCountryCode = await locationManager.countryCode(for: fav.coordinate)
-//
-//                    // Force refresh so the card never shows stale results when switching quickly
-//                    if let coord = effectiveWeatherApiCoordinate {
-//                        await weatherApiForecastViewModel.refresh(for: coord)
-//                    }
-//                }
-//            } else {
-//                selectedFavoriteCountryCode = nil
-//
-//                // Returning to current location: refresh if WeatherAPI is active
-//                if let coord = effectiveWeatherApiCoordinate {
-//                    Task { await weatherApiForecastViewModel.refresh(for: coord) }
-//                }
-//            }
-//        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { topBarToolbar }
@@ -732,7 +675,7 @@ struct ContentView: View {
         if newValue == CurrentConditionsSource.pws.rawValue {
             selection.selectedFavorite = nil
             previousSourceRaw = nil
-            viewModel.pwsLabel = ""
+            // viewModel.pwsLabel = ""    // Deleted as per instructions
         }
 
         viewModel.setLoadingPlaceholders()
@@ -1282,7 +1225,9 @@ struct ContentView: View {
                     HStack(spacing: 6) {
                         if source == .pws {
                             let label = viewModel.pwsLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-                            Text(label.isEmpty ? "Personal Weather Station" : label)
+                            let sid = pwsStationID.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let display = !label.isEmpty ? label : (!sid.isEmpty ? sid : "Personal Weather Station")
+                            Text(display)
                                 .font(.subheadline)
                                 .foregroundStyle(YAWATheme.textSecondary)
                                 .lineLimit(1)
@@ -1855,8 +1800,71 @@ struct ContentView: View {
         }
         .foregroundStyle(YAWATheme.textPrimary)
     }
-    
-    
+
+    // MARK: - Current Conditions tile computed properties
+
+    private var weatherApiConditionText: String {
+        // Used when NOAA+ is showing WeatherAPI current conditions (international favorites)
+        let t = weatherApiCurrentVM.current?.condition.text
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? viewModel.conditions : t
+    }
+
+    private var currentTempText: String {
+        if source == .pws { return viewModel.temp }
+        // Existing logic below
+        if source == .noaa && shouldUseWeatherApiForCurrent {
+            return viewModel.temp
+        }
+        return viewModel.temp
+    }
+
+    private var currentWindDisplayText: String {
+        if source == .pws { return viewModel.windDisplay }
+        // Existing logic below
+        if source == .noaa && shouldUseWeatherApiForCurrent {
+            return viewModel.windDisplay
+        }
+        return viewModel.windDisplay
+    }
+
+    private var currentHumidityText: String {
+        if source == .pws { return viewModel.humidity }
+        // Existing logic below
+        if source == .noaa && shouldUseWeatherApiForCurrent {
+            return viewModel.humidity
+        }
+        return viewModel.humidity
+    }
+
+    private var currentPressureText: String {
+        if source == .pws { return viewModel.pressure }
+        // Existing logic below
+        if source == .noaa && shouldUseWeatherApiForCurrent {
+            return viewModel.pressure
+        }
+        return viewModel.pressure
+    }
+
+
+    private var currentPrecipText: String {
+        if source == .pws { return viewModel.precipitation }
+        // Existing logic below
+        if source == .noaa && shouldUseWeatherApiForCurrent {
+            return viewModel.precipitation
+        }
+        return viewModel.precipitation
+    }
+
+    private var currentConditionsText: String {
+        // NOAA mode shows conditions text; for international favorites in NOAA+ mode
+        // we use WeatherAPI current conditions.
+        if source == .noaa && shouldUseWeatherApiForCurrent {
+            return weatherApiConditionText
+        }
+        return viewModel.conditions
+    }
+
 
     private func miniTile(_ systemImage: String, _ color: Color, _ value: String) -> some View {
         VStack(spacing: 8) {
@@ -1885,6 +1893,15 @@ struct ContentView: View {
     // MARK: - Async refresh
 
     private func refreshCurrentIfNeeded() async {
+        // ✅ PWS current conditions come from Weather.com (station-based), not WeatherAPI.
+        // Do not gate this on a coordinate; coordinates are only needed to anchor WeatherAPI forecasts.
+        if source == .pws {
+            // Use a dummy coordinate if needed to satisfy the signature; the PWS fetch should ignore it.
+            let coord = locationManager.coordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
+            await viewModel.refreshCurrentConditions(source: .pws, coord: coord, locationName: nil)
+            return
+        }
+
         // Choose a coordinate for "current conditions"
         let coord: CLLocationCoordinate2D?
         let locationName: String?
@@ -1898,13 +1915,13 @@ struct ContentView: View {
         }
 
         guard let coord else {
-            // Keep your existing behavior: show a clear message + allow user to recover.
+            // This is now a true GPS/favorite failure in NOAA+ mode.
             viewModel.errorMessage = "Location unavailable."
             return
         }
 
-        // ✅ WeatherAPI current (international favorites OR user-selected PWS mode)
-        if shouldUseWeatherApiForCurrent {
+        // ✅ WeatherAPI current (international favorites when in NOAA+ mode)
+        if source == .noaa && shouldUseWeatherApiForCurrent {
             viewModel.setLoadingPlaceholders()
 
             await weatherApiCurrentVM.refresh(for: coord)
@@ -1943,7 +1960,8 @@ struct ContentView: View {
 
         // Humidity (optional)
         if let h = c.humidity {
-            viewModel.humidity = "\(h)%"
+            // WeatherAPI model may expose humidity as Double; show as whole percent.
+            viewModel.humidity = "\(Int(Double(h).rounded()))%"
         } else {
             viewModel.humidity = "--"
         }

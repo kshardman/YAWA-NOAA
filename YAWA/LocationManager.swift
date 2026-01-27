@@ -788,6 +788,7 @@ struct WeatherAPIForecastResponse: Decodable {
             let maxtemp_f: Double
             let mintemp_f: Double
             let daily_chance_of_rain: Int?
+            let daily_chance_of_snow: Int?
             let condition: Condition
 
             struct Condition: Decodable {
@@ -795,7 +796,7 @@ struct WeatherAPIForecastResponse: Decodable {
             }
 
             enum CodingKeys: String, CodingKey {
-                case maxtemp_f, mintemp_f, daily_chance_of_rain, condition
+                case maxtemp_f, mintemp_f, daily_chance_of_rain, daily_chance_of_snow, condition
             }
 
             init(from decoder: Decoder) throws {
@@ -804,12 +805,21 @@ struct WeatherAPIForecastResponse: Decodable {
                 mintemp_f = try c.decode(Double.self, forKey: .mintemp_f)
                 condition = try c.decode(Condition.self, forKey: .condition)
 
+                // WeatherAPI sometimes returns these as string or number
                 if let i = try? c.decode(Int.self, forKey: .daily_chance_of_rain) {
                     daily_chance_of_rain = i
                 } else if let s = try? c.decode(String.self, forKey: .daily_chance_of_rain), let i = Int(s) {
                     daily_chance_of_rain = i
                 } else {
                     daily_chance_of_rain = nil
+                }
+
+                if let i = try? c.decode(Int.self, forKey: .daily_chance_of_snow) {
+                    daily_chance_of_snow = i
+                } else if let s = try? c.decode(String.self, forKey: .daily_chance_of_snow), let i = Int(s) {
+                    daily_chance_of_snow = i
+                } else {
+                    daily_chance_of_snow = nil
                 }
             }
         }
@@ -1019,9 +1029,15 @@ final class WeatherAPIForecastViewModel: ObservableObject {
                 let hiF: Int
                 let loF: Int
                 let chanceRain: Int?
+                let chanceSnow: Int?
                 let hourlyLines: [String]
             }
 
+            func roundedPop(_ v: Int?) -> Int? {
+                guard let v else { return nil }
+                let r = Int((Double(v) / 10.0).rounded() * 10)
+                return r == 0 ? nil : r
+            }
             let raw: [RawDay] = forecastDays.map { fd in
                 // 1️⃣ date / labels
                 let date = fd.date
@@ -1040,9 +1056,8 @@ final class WeatherAPIForecastViewModel: ObservableObject {
                 let lo = Int(fd.day.mintemp_f.rounded())
 
                 // 3️⃣ daily PoP (already rounded + zero suppressed)
-                let chance: Int? = fd.day.daily_chance_of_rain
-                    .map { Int((Double($0) / 10.0).rounded() * 10) }
-                    .flatMap { $0 == 0 ? nil : $0 }
+                let chanceRain: Int? = roundedPop(fd.day.daily_chance_of_rain)
+                let chanceSnow: Int? = roundedPop(fd.day.daily_chance_of_snow)
 
                 // 4️⃣ pick representative hours
                 let morning = closestHour(fd.hour, target: 9)
@@ -1063,7 +1078,8 @@ final class WeatherAPIForecastViewModel: ObservableObject {
                     conditionText: fd.day.condition.text,
                     hiF: hi,
                     loF: lo,
-                    chanceRain: chance,
+                    chanceRain: chanceRain,
+                    chanceSnow: chanceSnow,
                     hourlyLines: hourlyLines
                 )
             }
@@ -1080,11 +1096,29 @@ final class WeatherAPIForecastViewModel: ObservableObject {
 
                 // Build detail text using the shifted low
                 var lines: [String] = []
-//                lines.append(r.conditionText)
-//                lines.append("High \(r.hiF)° / Low \(shiftedLo)°")
 
-                if let chance = r.chanceRain {
-                    lines.append("Chance of rain: \(chance)%")
+
+                if let pop = r.chanceRain ?? r.chanceSnow {
+                    let cond = r.conditionText.lowercased()
+                    let looksSnowy =
+                        cond.contains("snow") ||
+                        cond.contains("sleet") ||
+                        cond.contains("blizzard") ||
+                        cond.contains("ice") ||
+                        cond.contains("freezing")
+
+                    let freezing = r.hiF <= 32
+
+                    let label: String
+                    if let snow = r.chanceSnow, (snow >= (r.chanceRain ?? 0) || looksSnowy || freezing) {
+                        label = "Chance of snow"
+                    } else if looksSnowy || freezing {
+                        label = "Chance of precipitation"
+                    } else {
+                        label = "Chance of rain"
+                    }
+
+                    lines.append("\(label): \(pop)%")
                 }
 
                 if !r.hourlyLines.isEmpty {
