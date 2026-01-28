@@ -1202,7 +1202,7 @@ struct ContentView: View {
             // Row 1: icon + title (left), location (right)
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 HStack(spacing: 8) {
-                    Image(systemName: "clock")
+                    Image(systemName: "clock.fill")
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(YAWATheme.textSecondary)
 

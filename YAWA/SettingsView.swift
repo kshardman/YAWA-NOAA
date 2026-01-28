@@ -61,10 +61,10 @@ struct SettingsView: View {
 
                 List {
                     notificationsSection
-                    homeSection
                     sourceSection
+                    homeSection
                     privacySection
-//                    attributionSection
+                    attributionSection
                     aboutSection
                 }
                 // ✅ Let the sky show through
@@ -239,6 +239,20 @@ private extension SettingsView {
         .listRowSeparator(.hidden)
     }
 
+    var attributionSection: some View {
+        Section(header: Text("Attribution").font(.subheadline.weight(.semibold)).foregroundStyle(YAWATheme.textPrimary)) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Radar images and tiles are from rainviewer.com. NOAA forecasts are from weather.gov.  International locations use forecast data from weatherAPI.com")
+                    .font(.caption)
+                    .foregroundStyle(YAWATheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 2)
+        }
+        .textCase(nil)
+        .listRowBackground(YAWATheme.card2)
+        .listRowSeparator(.hidden)
+    }
 
     var notificationsSection: some View {
         Section {
@@ -293,8 +307,8 @@ private extension SettingsView {
             // Helpful subtitle / explanation
             VStack(alignment: .leading, spacing: 6) {
                 Text(source == .noaa
-                     ? "NOAA+ uses NOAA in the U.S. and WeatherAPI for international locations."
-                     : "Uses your configured station + Weather.com PWS API key and WeatherAPI.com key and forecasts")
+                     ? "NOAA+ uses NOAA (weather.gov) for U.S. conditions and forecasts.  For international conditions and forecasts, weatherapi.com is used."
+                     : "PWS mode uses your weather.com stationID and API key to obtain current conditions.  For forecasts at your stationID, weatherAPI.com API key is used.")
                     .font(.caption)
                     .foregroundStyle(YAWATheme.textSecondary)
             }
