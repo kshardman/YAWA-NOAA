@@ -77,9 +77,9 @@ struct ContentView: View {
     @EnvironmentObject private var selection: LocationSelectionStore
     
     @State private var selectedDetail: DetailPayload?
+    @State private var forecastPager: ForecastPagerPayload?
     @State private var showingAllAlerts = false
     
- //   @State private var showingRadar = false
     @State private var radarTarget: RadarTarget?
     
     @State private var selectedFavoriteCountryCode: String? = nil
@@ -166,6 +166,24 @@ struct ContentView: View {
         case text(String)
         case alert(description: String?, instructions: [String], severity: String?, issuedAt: Date?)
         case forecast(day: String?, night: String?, dayDate: Date?, hiF: Int?, loF: Int?, hourly: [(date: Date, tempF: Double)])
+    }
+    // MARK: - Swipeable forecast detail paging
+
+    private struct ForecastPagerPayload: Identifiable {
+        let id = UUID()
+        let pages: [ForecastPage]
+        let initialPageID: String
+    }
+
+    private struct ForecastPage: Identifiable {
+        let id: String                  // stable per-day identifier
+        let title: String               // e.g. "Tue 1/28"
+        let day: String?
+        let night: String?
+        let dayDate: Date?              // non-nil => NOAA
+        let hiF: Int?
+        let loF: Int?
+        let hourly: [(date: Date, tempF: Double)] // non-empty => WeatherAPI (or preloaded)
     }
 
     private struct DetailPayload: Identifiable {
@@ -515,10 +533,146 @@ struct ContentView: View {
         .sheet(item: $selectedDetail) { detail in
             alertDetailSheet(detail)
         }
+        
+        .sheet(item: $forecastPager) { pager in
+            forecastPagerSheet(pager)
+        }
         .sheet(isPresented: $showingAllAlerts) {
             allAlertsSheet
         }
     }
+
+    // MARK: - Swipeable forecast details (paged)
+
+    private func forecastPagerSheet(_ pager: ForecastPagerPayload) -> some View {
+        ForecastPagerSheet(
+            pager: pager,
+            useCelsius: isInternationalFavorite,
+            source: source,
+            noaaHourlyVM: noaaHourlyVM,
+            selection: selection,
+            locationManager: locationManager,
+            forecastDetailCard: { title, day, night, hiF, loF, hourly, useCelsius, isNOAA in
+                AnyView(
+                    forecastDetailCard(
+                        title: title,
+                        day: day,
+                        night: night,
+                        hiF: hiF,
+                        loF: loF,
+                        hourly: hourly,
+                        useCelsius: useCelsius,
+                        isNOAA: isNOAA
+                    )
+                )
+            }
+        )
+        .background(YAWATheme.sky)
+        .preferredColorScheme(.dark)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private struct ForecastPagerSheet: View {
+        let pager: ForecastPagerPayload
+        let useCelsius: Bool
+        let source: CurrentConditionsSource
+
+        @ObservedObject var noaaHourlyVM: NOAAHourlyForecastViewModel
+        let selection: LocationSelectionStore
+        let locationManager: LocationManager
+
+        let forecastDetailCard: (
+            _ title: String,
+            _ day: String,
+            _ night: String?,
+            _ hiF: Int?,
+            _ loF: Int?,
+            _ hourly: [(date: Date, tempF: Double)],
+            _ useCelsius: Bool,
+            _ isNOAA: Bool
+        ) -> AnyView
+
+        @State private var pageID: String
+
+        init(
+            pager: ForecastPagerPayload,
+            useCelsius: Bool,
+            source: CurrentConditionsSource,
+            noaaHourlyVM: NOAAHourlyForecastViewModel,
+            selection: LocationSelectionStore,
+            locationManager: LocationManager,
+            forecastDetailCard: @escaping (
+                _ title: String,
+                _ day: String,
+                _ night: String?,
+                _ hiF: Int?,
+                _ loF: Int?,
+                _ hourly: [(date: Date, tempF: Double)],
+                _ useCelsius: Bool,
+                _ isNOAA: Bool
+            ) -> AnyView
+        ) {
+            self.pager = pager
+            self.useCelsius = useCelsius
+            self.source = source
+            self.noaaHourlyVM = noaaHourlyVM
+            self.selection = selection
+            self.locationManager = locationManager
+            self.forecastDetailCard = forecastDetailCard
+            _pageID = State(initialValue: pager.initialPageID)
+        }
+
+        var body: some View {
+            ZStack {
+                YAWATheme.card2.ignoresSafeArea()
+
+                TabView(selection: $pageID) {
+                    ForEach(pager.pages) { p in
+                        ScrollView {
+                            let safeDay = (p.day ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                            let safeNight = (p.night ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+                            let resolvedHourly: [(date: Date, tempF: Double)] = !p.hourly.isEmpty
+                                ? p.hourly
+                                : (p.dayDate != nil ? noaaHourlyVM.hourlyTuples(for: p.dayDate!) : [])
+
+                            // Only trust hi/lo when WeatherAPI-driven (NOAA pages have dayDate)
+                            let trustedHiF: Int? = (p.dayDate == nil) ? p.hiF : nil
+                            let trustedLoF: Int? = (p.dayDate == nil) ? p.loF : nil
+
+                            forecastDetailCard(
+                                p.title,
+                                safeDay,
+                                safeNight.isEmpty ? nil : safeNight,
+                                trustedHiF,
+                                trustedLoF,
+                                resolvedHourly,
+                                useCelsius,
+                                p.dayDate != nil
+                            )
+                            .padding(16)
+                            .task(id: p.dayDate) {
+                                // Load NOAA hourly on demand per page
+                                guard source == .noaa else { return }
+                                guard p.hourly.isEmpty else { return }
+                                guard let dayDate = p.dayDate else { return }
+
+                                let coord: CLLocationCoordinate2D? = selection.selectedFavorite?.coordinate ?? locationManager.coordinate
+                                guard let coord else { return }
+
+                                await noaaHourlyVM.loadIfNeeded(for: coord, day: dayDate)
+                            }
+                        }
+                        .tag(p.id)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .automatic))
+            }
+        }
+    }
+        
+
 
     private var mainStack: some View {
         VStack(spacing: 18) {
@@ -1437,17 +1591,26 @@ struct ContentView: View {
                 isLast: index == weatherApiForecastViewModel.days.count - 1,
                 sideCol: sideCol,
                 onTap: {
-                    let parts = splitDayNight(d.detailText)
-                    let hourly = weatherApiForecastViewModel.hourlyPoints(for: d.id)
+                    let pages: [ForecastPage] = weatherApiForecastViewModel.days.map { day in
+                        let parts = splitDayNight(day.detailText)
+                        let hourly = weatherApiForecastViewModel.hourlyPoints(for: day.id)
+                            .map { (date: $0.date, tempF: $0.tempF) }
 
-                    selectedDetail = DetailPayload(
-                        title: "\(d.weekday) \(d.dateText)",
-                        day: parts.day,
-                        night: parts.night,
-                        dayDate: nil,
-                        hiF: d.hiF,
-                        loF: d.loF,
-                        hourly: hourly.map { (date: $0.date, tempF: $0.tempF) }
+                        return ForecastPage(
+                            id: day.id,
+                            title: "\(day.weekday) \(day.dateText)",
+                            day: parts.day,
+                            night: parts.night,
+                            dayDate: nil,
+                            hiF: day.hiF,
+                            loF: day.loF,
+                            hourly: hourly
+                        )
+                    }
+
+                    forecastPager = ForecastPagerPayload(
+                        pages: pages,
+                        initialPageID: d.id
                     )
                 }
             )
@@ -1660,23 +1823,35 @@ struct ContentView: View {
  //                   .padding(.vertical, 6)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        let dayText = (d.day.detailedForecast ?? d.day.shortForecast)
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        let pages: [ForecastPage] = forecastDays.map { item in
+                            let dayText = (item.day.detailedForecast ?? item.day.shortForecast)
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
 
-                        let nightText = (d.night?.detailedForecast ?? "")
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        let normalizedNight = (nightText == dayText) ? "" : nightText
+                            let nightText = (item.night?.detailedForecast ?? "")
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            let normalizedNight = (nightText == dayText) ? "" : nightText
 
-                        // parts/description code left for now (see instructions).
+                            let df = ISO8601DateFormatter()
+                            let pid = df.string(from: item.startDate)
 
-                        selectedDetail = DetailPayload(
-                            title: "\(abbreviatedDayName(d.name)) \(d.dateText)",
-                            day: dayText,
-                            night: normalizedNight.isEmpty ? nil : normalizedNight,
-                            dayDate: d.startDate,
-                            hiF: nil,
-                            loF: nil,
-                            hourly: []
+                            return ForecastPage(
+                                id: pid,
+                                title: "\(abbreviatedDayName(item.name)) \(item.dateText)",
+                                day: dayText,
+                                night: normalizedNight.isEmpty ? nil : normalizedNight,
+                                dayDate: item.startDate,
+                                hiF: nil,
+                                loF: nil,
+                                hourly: []
+                            )
+                        }
+
+                        let df = ISO8601DateFormatter()
+                        let initialID = df.string(from: d.startDate)
+
+                        forecastPager = ForecastPagerPayload(
+                            pages: pages,
+                            initialPageID: initialID
                         )
                     }
 
