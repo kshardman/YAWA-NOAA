@@ -85,22 +85,6 @@ struct ContentView: View {
     @State private var selectedFavoriteCountryCode: String? = nil
     
     @StateObject private var weatherApiCurrentVM = WeatherAPICurrentViewModel()
-    
-////    private var effectiveWeatherApiCoordinate: CLLocationCoordinate2D? {
-////        // In PWS mode, anchor WeatherAPI forecast to the station coordinate (published by WeatherViewModel)
-////        if source == .pws {
-////            return viewModel.pwsStationCoordinate
-////        }
-////        // Otherwise follow the active (GPS/favorite) coordinate
-////        return locationManager.coordinate
-////    }
-//
-//    private var effectiveWeatherApiCoordinate: CLLocationCoordinate2D? {
-//        if let fav = selection.selectedFavorite {
-//            return fav.coordinate
-//        }
-//        return locationManager.coordinate
-//    }
  
     private var effectiveWeatherApiCoordinate: CLLocationCoordinate2D? {
         // In PWS mode, anchor WeatherAPI current + forecast to the station coordinate.
@@ -116,16 +100,6 @@ struct ContentView: View {
         // Otherwise follow the active GPS coordinate.
         return locationManager.coordinate
     }
-    
-    
-
-//    private var weatherApiCoordKey: String {
-//        guard let c = effectiveWeatherApiCoordinate else { return "" }
-//        let lat = (c.latitude * 100).rounded() / 100
-//        let lon = (c.longitude * 100).rounded() / 100
-//        return "\(lat),\(lon)"
-//    }
-//
     
     private var weatherApiCoordKey: String {
         guard let c = effectiveWeatherApiCoordinate else { return "weatherapi:none" }
@@ -306,6 +280,41 @@ struct ContentView: View {
     // When picking a favorite we force NOAA, but we remember what user had selected
     @State private var previousSourceRaw: String? = nil
 
+    private enum LaunchLocationMode: String {
+        case currentLocation
+        case selectedFavorite
+    }
+
+    @AppStorage("launchLocationMode")
+    private var launchLocationModeRaw: String = LaunchLocationMode.currentLocation.rawValue
+
+    // New key (doesn’t need to exist elsewhere; AppStorage will create it)
+    @AppStorage("launchFavoriteID")
+    private var launchFavoriteID: String = ""
+
+    private var launchLocationMode: LaunchLocationMode {
+        LaunchLocationMode(rawValue: launchLocationModeRaw) ?? .currentLocation
+    }
+
+    @MainActor
+    private func applyLaunchSelectionIfNeeded() {
+        guard launchLocationMode == .selectedFavorite else { return }
+
+        // Try to restore the persisted favorite
+        if !launchFavoriteID.isEmpty,
+           let match = favorites.favorites.first(where: { $0.id.uuidString == launchFavoriteID }) {
+            selection.selectedFavorite = match
+            return
+        }
+
+        // Fallback: first favorite (and persist it so we stop “floating”)
+        if let first = favorites.favorites.first {
+            selection.selectedFavorite = first
+            launchFavoriteID = first.id.uuidString
+        }
+    }
+    
+    
     @AppStorage("currentConditionsSource")
     private var sourceRaw: String = CurrentConditionsSource.noaa.rawValue
     @AppStorage("pwsStationID") private var pwsStationID: String = ""
@@ -506,7 +515,16 @@ struct ContentView: View {
         .task { await onFirstAppearTask() }
         .onReceive(locationManager.$coordinate) { coord in onCoordinateChange(coord) }
         .onChange(of: scenePhase) { _, phase in onScenePhaseChange(phase) }
-        .onChange(of: selection.selectedFavorite?.id) { _, _ in Task { await onFavoriteChanged() } }
+        .onChange(of: selection.selectedFavorite?.id) { _, newID in
+            // Persist the user's last-selected favorite so we can restore it on next launch.
+            if let id = newID {
+                launchFavoriteID = id.uuidString
+            } else {
+                launchFavoriteID = ""
+            }
+
+            Task { await onFavoriteChanged() }
+        }
         .onChange(of: sourceRaw) { _, newValue in Task { await onSourceChanged(newValue) } }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -751,16 +769,52 @@ struct ContentView: View {
     @MainActor
     private func onFirstAppearTask() async {
         await NotificationService.shared.requestAuthorizationIfNeeded()
-        locationManager.request()
 
+        // Apply the launch setting BEFORE the first refresh.
+        switch launchLocationMode {
+        case .currentLocation:
+            // GPS mode: always start from GPS
+            selection.selectedFavorite = nil
+            selectedFavoriteCountryCode = nil
+            locationManager.request()
+
+        case .selectedFavorite:
+            // Favorite mode: restore last selected favorite (or fall back to first favorite).
+            if selection.selectedFavorite == nil {
+                if !launchFavoriteID.isEmpty,
+                   let fav = favorites.favorites.first(where: { $0.id.uuidString == launchFavoriteID }) {
+                    selection.selectedFavorite = fav
+                } else if let first = favorites.favorites.first {
+                    selection.selectedFavorite = first
+                    launchFavoriteID = first.id.uuidString
+                }
+            }
+
+            if let fav = selection.selectedFavorite {
+                // Needed for international logic / WeatherAPI fallback decisions.
+                selectedFavoriteCountryCode = await locationManager.countryCode(for: fav.coordinate)
+            } else {
+                // No favorite to restore → fall back to GPS.
+                selectedFavoriteCountryCode = nil
+                locationManager.request()
+            }
+        }
+
+        // Show placeholders quickly so the UI doesn't flash stale values.
         viewModel.setLoadingPlaceholders()
         if source == .noaa { forecastVM.setLoadingPlaceholders() }
         await Task.yield()
 
+        // Refresh current + forecast
         await refreshNow()
-        if source == .noaa, !isInternationalFavorite { await refreshForecastNow() }
+        if source == .noaa, !isInternationalFavorite {
+            await refreshForecastNow()
+        }
 
-        recordRefresh(coord: locationManager.coordinate)
+        // Record the coordinate we actually refreshed for
+        let refreshedCoord: CLLocationCoordinate2D? =
+            selection.selectedFavorite?.coordinate ?? locationManager.coordinate
+        recordRefresh(coord: refreshedCoord)
     }
 
     private func onCoordinateChange(_ coord: CLLocationCoordinate2D?) {

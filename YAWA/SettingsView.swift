@@ -5,10 +5,25 @@
 //  Created by Keith Sharman on 1/4/26.
 //
 
+
 import SwiftUI
 import UIKit
 import UserNotifications
 import CoreLocation
+
+private enum LaunchLocationMode: String, CaseIterable, Identifiable {
+    case currentLocation
+    case selectedFavorite
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .currentLocation: return "Current Location"
+        case .selectedFavorite: return "Selected Favorite"
+        }
+    }
+}
 
 struct SettingsView: View {
     @AppStorage("pwsStationID") private var stationID: String = ""
@@ -19,6 +34,8 @@ struct SettingsView: View {
     @AppStorage("homeEnabled") private var homeEnabled: Bool = false
     @AppStorage("homeLat") private var homeLat: Double = 0
     @AppStorage("homeLon") private var homeLon: Double = 0
+
+    @AppStorage("launchLocationMode") private var launchLocationModeRaw: String = LaunchLocationMode.currentLocation.rawValue
 
     // One-time defaults from bundled config.plist (optional)
     @State private var loadedDefaults = false
@@ -63,6 +80,7 @@ struct SettingsView: View {
                     notificationsSection
                     sourceSection
                     homeSection
+                    launchSection
                     privacySection
                     attributionSection
                     aboutSection
@@ -136,6 +154,29 @@ struct SettingsView: View {
 // MARK: - Sections
 
 private extension SettingsView {
+    var launchSection: some View {
+        Section {
+            Picker("On Launch", selection: $launchLocationModeRaw) {
+                ForEach(LaunchLocationMode.allCases) { mode in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text("Choose whether YAWA opens to your current GPS location or the currently selected favorite.")
+                .font(.caption)
+                .foregroundStyle(YAWATheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+        } header: {
+            Text("On Launch")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(YAWATheme.textPrimary)
+        }
+        .textCase(nil)
+        .listRowBackground(YAWATheme.card2)
+        .listRowSeparator(.hidden)
+    }
     var homeSection: some View {
         let radiusMeters: Double = 100
         let hasFix = locationManager.coordinate != nil
