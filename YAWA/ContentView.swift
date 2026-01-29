@@ -569,7 +569,7 @@ struct ContentView: View {
         )
         .background(YAWATheme.sky)
         .preferredColorScheme(.dark)
-        .presentationDetents([.fraction(0.70), .large])
+        .presentationDetents([.fraction(0.72), .large])
         .presentationDragIndicator(.visible)
     }
 
@@ -1952,11 +1952,12 @@ struct ContentView: View {
     }
 
     private var tempTextView: some View {
-        let raw = currentTempText   // e.g. "-28°C" or "72°"
+        let raw = currentTempText   // e.g. "-28°C" or "72°" or "72°F"
 
-        // Normalize so we don't accidentally keep a space before the unit ("-28 °C")
+        // Normalize so we don't accidentally keep a space before the unit ("-28 °C" or "72 °F")
         let cleaned = raw
             .replacingOccurrences(of: " °C", with: "°C")
+            .replacingOccurrences(of: " °F", with: "°F")
             .replacingOccurrences(of: " °", with: "°")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -1965,6 +1966,7 @@ struct ContentView: View {
         // Split numeric part from unit and trim any leftover whitespace
         let number = cleaned
             .replacingOccurrences(of: "°C", with: "")
+            .replacingOccurrences(of: "°F", with: "")
             .replacingOccurrences(of: "°", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -1974,7 +1976,7 @@ struct ContentView: View {
                 .kerning(-1.0)   // subtle tightening, looks better than mono here
 
             // Superscript-like unit to save horizontal space
-            Text(isCelsius ? "°C" : "°")
+            Text(isCelsius ? "°C" : "°F")
                 .font(.system(size: tempFontSize * 0.42, weight: .semibold))
                 .baselineOffset(tempFontSize * 0.52)
         }
