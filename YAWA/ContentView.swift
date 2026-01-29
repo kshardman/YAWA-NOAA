@@ -888,7 +888,6 @@ struct ContentView: View {
         if newValue == CurrentConditionsSource.pws.rawValue {
             selection.selectedFavorite = nil
             previousSourceRaw = nil
-            // viewModel.pwsLabel = ""    // Deleted as per instructions
         }
 
         viewModel.setLoadingPlaceholders()
@@ -3163,6 +3162,11 @@ private struct LocationsSheet: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         selection.selectedFavorite = nil
+
+                        // User explicitly chose GPS → override launch behavior
+                        UserDefaults.standard.set("currentLocation", forKey: "launchLocationMode")
+                        // Also clear any saved favorite that may have been used for launch
+                        UserDefaults.standard.set("", forKey: "launchFavoriteID")
 
                         if let prev = previousSourceRaw {
                             sourceRaw = prev

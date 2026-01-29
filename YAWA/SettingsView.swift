@@ -79,8 +79,8 @@ struct SettingsView: View {
                 List {
                     notificationsSection
                     sourceSection
-                    homeSection
                     launchSection
+                    homeSection
                     privacySection
                     attributionSection
                     aboutSection
