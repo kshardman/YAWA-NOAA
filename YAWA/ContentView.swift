@@ -665,6 +665,7 @@ struct ContentView: View {
                                     await noaaHourlyVM.loadIfNeeded(for: coord, day: dayDate)
                                 }
                             }
+                            .padding(.bottom, 36)
                             .tag(p.id)
                         }
                     }
@@ -976,7 +977,7 @@ struct ContentView: View {
                     .foregroundStyle(YAWATheme.textPrimary)
                     .lineSpacing(6)
                     .multilineTextAlignment(.leading)
-                    .textSelection(.enabled)
+  //                  .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(12)
@@ -1001,7 +1002,7 @@ struct ContentView: View {
                         .foregroundStyle(YAWATheme.textPrimary)
                         .lineSpacing(6)
                         .multilineTextAlignment(.leading)
-                        .textSelection(.enabled)
+ //                       .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(12)
