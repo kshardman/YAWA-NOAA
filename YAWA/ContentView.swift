@@ -569,7 +569,7 @@ struct ContentView: View {
         )
         .background(YAWATheme.sky)
         .preferredColorScheme(.dark)
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.fraction(0.70), .large])
         .presentationDragIndicator(.visible)
     }
 
@@ -627,47 +627,51 @@ struct ContentView: View {
             ZStack {
                 YAWATheme.card2.ignoresSafeArea()
 
-                TabView(selection: $pageID) {
-                    ForEach(pager.pages) { p in
-                        ScrollView {
-                            let safeDay = (p.day ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                            let safeNight = (p.night ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                VStack(spacing: 0) {
+                    TabView(selection: $pageID) {
+                        ForEach(pager.pages) { p in
+                            ScrollView {
+                                let safeDay = (p.day ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                let safeNight = (p.night ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-                            let resolvedHourly: [(date: Date, tempF: Double)] = !p.hourly.isEmpty
-                                ? p.hourly
-                                : (p.dayDate != nil ? noaaHourlyVM.hourlyTuples(for: p.dayDate!) : [])
+                                let resolvedHourly: [(date: Date, tempF: Double)] = !p.hourly.isEmpty
+                                    ? p.hourly
+                                    : (p.dayDate != nil ? noaaHourlyVM.hourlyTuples(for: p.dayDate!) : [])
 
-                            // Only trust hi/lo when WeatherAPI-driven (NOAA pages have dayDate)
-                            let trustedHiF: Int? = (p.dayDate == nil) ? p.hiF : nil
-                            let trustedLoF: Int? = (p.dayDate == nil) ? p.loF : nil
+                                // Only trust hi/lo when WeatherAPI-driven (NOAA pages have dayDate)
+                                let trustedHiF: Int? = (p.dayDate == nil) ? p.hiF : nil
+                                let trustedLoF: Int? = (p.dayDate == nil) ? p.loF : nil
 
-                            forecastDetailCard(
-                                p.title,
-                                safeDay,
-                                safeNight.isEmpty ? nil : safeNight,
-                                trustedHiF,
-                                trustedLoF,
-                                resolvedHourly,
-                                useCelsius,
-                                p.dayDate != nil
-                            )
-                            .padding(16)
-                            .task(id: p.dayDate) {
-                                // Load NOAA hourly on demand per page
-                                guard source == .noaa else { return }
-                                guard p.hourly.isEmpty else { return }
-                                guard let dayDate = p.dayDate else { return }
+                                forecastDetailCard(
+                                    p.title,
+                                    safeDay,
+                                    safeNight.isEmpty ? nil : safeNight,
+                                    trustedHiF,
+                                    trustedLoF,
+                                    resolvedHourly,
+                                    useCelsius,
+                                    p.dayDate != nil
+                                )
+                                .padding(16)
+                                .task(id: p.dayDate) {
+                                    // Load NOAA hourly on demand per page
+                                    guard source == .noaa else { return }
+                                    guard p.hourly.isEmpty else { return }
+                                    guard let dayDate = p.dayDate else { return }
 
-                                let coord: CLLocationCoordinate2D? = selection.selectedFavorite?.coordinate ?? locationManager.coordinate
-                                guard let coord else { return }
+                                    let coord: CLLocationCoordinate2D? = selection.selectedFavorite?.coordinate ?? locationManager.coordinate
+                                    guard let coord else { return }
 
-                                await noaaHourlyVM.loadIfNeeded(for: coord, day: dayDate)
+                                    await noaaHourlyVM.loadIfNeeded(for: coord, day: dayDate)
+                                }
                             }
+                            .tag(p.id)
                         }
-                        .tag(p.id)
                     }
+                    // Force the dots, and give them their own band so they don't overlay the chart.
+                    .tabViewStyle(.page(indexDisplayMode: .always))
+                    .indexViewStyle(.page(backgroundDisplayMode: .always))
                 }
-                .tabViewStyle(.page(indexDisplayMode: .automatic))
             }
         }
     }
