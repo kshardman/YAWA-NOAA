@@ -33,6 +33,7 @@ final class NOAACurrentConditionsService {
         lon: Double
     ) async throws -> (stationName: String?, stationId: String, obs: NWSLatestObservationResponse.Properties) {
 
+        print("[NET] NOAACurrentConditionsService START caller=refreshLatestObservation")
         // 1) points endpoint -> observationStations URL
         let pointsURL = try makeURL("https://api.weather.gov/points/\(lat),\(lon)")
         var pointsReq = URLRequest(url: pointsURL)

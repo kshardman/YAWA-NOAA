@@ -82,15 +82,7 @@ struct RadarView: View {
                     Button("Done") { dismiss() }
                 }
 
-//                ToolbarItem(placement: .primaryAction) {
-//                    Button {
-//                        togglePlay()
-//                    } label: {
-//                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-//                    }
-//                    .disabled(frames.count < 2)
-//                    .accessibilityLabel(isPlaying ? "Pause radar" : "Play radar")
-//                }
+
             }
 
             .task {

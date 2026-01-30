@@ -74,6 +74,7 @@ final class LocationManager: NSObject, ObservableObject {
     private let manager = CLLocationManager()
     private var lastGeocodedCoord: CLLocationCoordinate2D?
     private let geocoder = CLGeocoder()
+    private var isGeocoding = false
     
     // Cache reverse-geocoded country codes for favorites (avoid repeated geocoder calls)
     private var countryCodeCache: [String: String] = [:]
@@ -230,6 +231,10 @@ final class LocationManager: NSObject, ObservableObject {
     // MARK: - Reverse geocode (City, ST)
 
     private func reverseGeocodeIfNeeded(for location: CLLocation) async {
+        // Prevent overlapping reverse-geocode calls during burst updates
+        guard !isGeocoding else { return }
+        isGeocoding = true
+        defer { isGeocoding = false }
         // If we're at Home, prefer the simple label and skip geocoding.
         if isAtHome(location) {
             self.locationName = "Home"
@@ -318,13 +323,16 @@ extension LocationManager: CLLocationManagerDelegate {
         self.lastLocationDate = loc.timestamp
 
         // Stop when accuracy is reasonable (prevents battery drain)
-//        if loc.horizontalAccuracy > 0 && loc.horizontalAccuracy <= 500 {
-//            stopBurstUpdate()
- //       }
+        if loc.horizontalAccuracy > 0 && loc.horizontalAccuracy <= 150 {
+            stopBurstUpdate()
+        }
 
         // Async reverse geocode safely
-        Task { [weak self] in
-            await self?.reverseGeocodeIfNeeded(for: loc)
+        let goodEnough = (loc.horizontalAccuracy > 0 && loc.horizontalAccuracy <= 150)
+        if goodEnough || !isBursting {
+            Task { [weak self] in
+                await self?.reverseGeocodeIfNeeded(for: loc)
+            }
         }
     }
 }
@@ -432,6 +440,7 @@ final class NOAAService {
     }
 
     func fetchActiveAlerts(lat: Double, lon: Double) async throws -> [NWSAlertsResponse.Feature] {
+        print("[NET] fetchactivealerts")
         guard let url = URL(string: "https://api.weather.gov/alerts/active?point=\(lat),\(lon)") else {
             throw NOAAServiceError.invalidURL
         }
@@ -451,6 +460,7 @@ final class NOAAService {
     
     func fetch7DayPeriods(lat: Double, lon: Double) async throws -> [NWSForecastResponse.Period] {
         // 1) points endpoint
+        print("[NET] fetch7dayperiods")
         guard let pointsURL = URL(string: "https://api.weather.gov/points/\(lat),\(lon)") else {
             throw NOAAServiceError.invalidURL
         }
@@ -540,6 +550,7 @@ final class ForecastViewModel: ObservableObject {
     }
 
     func loadIfNeeded(for coord: CLLocationCoordinate2D) async {
+        print("[NET] loadifneeded")
         // Always keep alerts current (they can change independently of periods)
         await loadAlertsIfNeeded(for: coord)
 
@@ -557,6 +568,7 @@ final class ForecastViewModel: ObservableObject {
 
     private func loadAlertsIfNeeded(for coord: CLLocationCoordinate2D) async {
         // If we already have alerts and coord is basically the same, skip
+        print("[NET] loadalertsifneeded")
         if let last = lastCoord,
            abs(last.latitude - coord.latitude) < 0.01,
            abs(last.longitude - coord.longitude) < 0.01,
@@ -574,6 +586,7 @@ final class ForecastViewModel: ObservableObject {
     }
 
     func refresh(for coord: CLLocationCoordinate2D) async {
+        print("[NET] refresh for coord")
         isLoading = true
         defer { isLoading = false }
 
@@ -650,6 +663,7 @@ final class WeatherAPICurrentService {
     }
 
     func fetchCurrent(lat: Double, lon: Double, apiKey: String) async throws -> WeatherAPICurrentResponse {
+        print("[NET] WeatherAPI forecast START caller=fetchCurrent")
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw WeatherAPIServiceError.missingKey }
 
@@ -690,6 +704,7 @@ final class WeatherAPICurrentViewModel: ObservableObject {
     private var lastCoord: CLLocationCoordinate2D?
 
     func loadIfNeeded(for coord: CLLocationCoordinate2D) async {
+        print("[NET] weatherapiloadifneeded")
         if let last = lastCoord,
            abs(last.latitude - coord.latitude) < 0.01,
            abs(last.longitude - coord.longitude) < 0.01,
@@ -701,6 +716,7 @@ final class WeatherAPICurrentViewModel: ObservableObject {
     }
 
     func refresh(for coord: CLLocationCoordinate2D) async {
+        print("[NET] weatherapirefresh")
         isLoading = true
         defer { isLoading = false }
 
@@ -845,6 +861,7 @@ final class WeatherAPIService {
     }
 
     func fetchForecast(lat: Double, lon: Double, apiKey: String) async throws -> [WeatherAPIForecastResponse.ForecastDay] {
+        print("[NET] weatherapifetchforecast")
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw WeatherAPIServiceError.missingKey }
 

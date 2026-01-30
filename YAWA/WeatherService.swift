@@ -96,12 +96,16 @@ struct WeatherService {
 
         guard let url = comps.url else { throw ServiceError.invalidURL }
 
+        print("[NET] fetchCurrent (PWS) current START \(Date())")
+        
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 15
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("no-cache", forHTTPHeaderField: "Pragma")
 
+
+        
         let (data, response) = try await URLSession.shared.data(for: request)
 
 

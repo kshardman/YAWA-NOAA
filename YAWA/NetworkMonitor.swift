@@ -17,6 +17,7 @@ final class NetworkMonitor: ObservableObject {
     private let queue = DispatchQueue(label: "NetworkMonitor")
 
     init() {
+        print("[NET] networkMonitor caller=init")
         monitor.pathUpdateHandler = { [weak self] path in
             let online = (path.status == .satisfied)
             DispatchQueue.main.async { [weak self] in

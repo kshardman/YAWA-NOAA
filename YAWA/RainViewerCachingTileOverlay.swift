@@ -160,6 +160,7 @@ final class RainViewerCachingTileOverlay: MKTileOverlay {
     // MARK: - Provider fetch
 
     private func fetchProviderTile(pixelSize: PixelSize, z: Int, x: Int, y: Int, completion: @escaping (Data?, Error?) -> Void) {
+        print("[NET] fetchProviderTile START ")
         let key = "\(framePath)|PROV|\(pixelSize.rawValue)|\(z)|\(x)|\(y)|\(colorScheme)|\(smooth)_\(snow)" as NSString
 
         if let cached = Self.memCache.object(forKey: key) {

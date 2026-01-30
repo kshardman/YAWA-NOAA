@@ -68,6 +68,8 @@ struct ContentView: View {
     @State private var lastRefreshCoord: CLLocationCoordinate2D? = nil
     
     @State private var pendingForegroundRefresh = false
+    @State private var didRunInitialRefresh = false
+    @State private var suppressCoordinateRefresh = true
 
     private let refreshMaxAge: TimeInterval = 15 * 60   // 15 minutes
     private let refreshDistanceMeters: CLLocationDistance = 1500 // ~1.5 km
@@ -513,7 +515,12 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .task { await onFirstAppearTask() }
-        .onReceive(locationManager.$coordinate) { coord in onCoordinateChange(coord) }
+        .onReceive(locationManager.$coordinate) { coord in
+            // During initial app launch, `onFirstAppearTask()` owns the first refresh.
+            // Ignore early coordinate publishes to prevent duplicate refreshes.
+            guard !suppressCoordinateRefresh else { return }
+            onCoordinateChange(coord)
+        }
         .onChange(of: scenePhase) { _, phase in onScenePhaseChange(phase) }
         .onChange(of: selection.selectedFavorite?.id) { _, newID in
             // Persist the user's last-selected favorite so we can restore it on next launch.
@@ -652,9 +659,15 @@ struct ContentView: View {
                                 let safeDay = (p.day ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                                 let safeNight = (p.night ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-                                let resolvedHourly: [(date: Date, tempF: Double)] = !p.hourly.isEmpty
-                                    ? p.hourly
-                                    : (p.dayDate != nil ? noaaHourlyVM.hourlyTuples(for: p.dayDate!) : [])
+                                let coord: CLLocationCoordinate2D? =
+                                    selection.selectedFavorite?.coordinate ?? locationManager.coordinate
+
+                                let resolvedHourly: [(date: Date, tempF: Double)] =
+                                    !p.hourly.isEmpty
+                                        ? p.hourly
+                                        : (coord != nil && p.dayDate != nil
+                                            ? noaaHourlyVM.hourlyTuples(for: coord!, day: p.dayDate!)
+                                            : [])
 
                                 // Only trust hi/lo when WeatherAPI-driven (NOAA pages have dayDate)
                                 let trustedHiF: Int? = (p.dayDate == nil) ? p.hiF : nil
@@ -768,7 +781,16 @@ struct ContentView: View {
 
     @MainActor
     private func onFirstAppearTask() async {
+        print("[REFRESH] onfirstappeartask")
+        // SwiftUI can call `.task {}` more than once due to view reconstruction.
+        // Make the launch refresh idempotent.
+        guard !didRunInitialRefresh else { return }
+        didRunInitialRefresh = true
+
         await NotificationService.shared.requestAuthorizationIfNeeded()
+
+        // Avoid a redundant coordinate-triggered refresh during initial launch.
+        pendingForegroundRefresh = false
 
         // Apply the launch setting BEFORE the first refresh.
         switch launchLocationMode {
@@ -776,6 +798,7 @@ struct ContentView: View {
             // GPS mode: always start from GPS
             selection.selectedFavorite = nil
             selectedFavoriteCountryCode = nil
+            // Request location; we'll suppress the initial coordinate publish from triggering a second refresh.
             locationManager.request()
 
         case .selectedFavorite:
@@ -796,6 +819,7 @@ struct ContentView: View {
             } else {
                 // No favorite to restore → fall back to GPS.
                 selectedFavoriteCountryCode = nil
+                // Request location; we'll suppress the initial coordinate publish from triggering a second refresh.
                 locationManager.request()
             }
         }
@@ -815,9 +839,13 @@ struct ContentView: View {
         let refreshedCoord: CLLocationCoordinate2D? =
             selection.selectedFavorite?.coordinate ?? locationManager.coordinate
         recordRefresh(coord: refreshedCoord)
+
+        // Allow coordinate-driven refreshes after the initial launch refresh completes.
+        suppressCoordinateRefresh = false
     }
 
     private func onCoordinateChange(_ coord: CLLocationCoordinate2D?) {
+        print("[REFRESH] oncoordinateChange")
         guard let coord else { return }
         guard selection.selectedFavorite == nil else { return }
         guard source != .pws else { return }
@@ -843,10 +871,13 @@ struct ContentView: View {
     }
 
     private func onScenePhaseChange(_ phase: ScenePhase) {
+        print("[REFRESH] onscenephasechange")
         guard phase == .active else { return }
         guard selection.selectedFavorite == nil else { return }
 
         pendingForegroundRefresh = true
+        // Foreground resumes should allow coordinate-triggered refreshes.
+        suppressCoordinateRefresh = false
         locationManager.refresh()
     }
 
@@ -1219,10 +1250,16 @@ struct ContentView: View {
 
                         // If the payload already includes hourly tuples (WeatherAPI), use them.
                         // Otherwise (NOAA), pull cached tuples for the selected day.
-                        let resolvedHourly: [(date: Date, tempF: Double)] = !hourly.isEmpty
-                            ? hourly
-                            : (dayDate != nil ? noaaHourlyVM.hourlyTuples(for: dayDate!) : [])
+                        let coord: CLLocationCoordinate2D? =
+                            selection.selectedFavorite?.coordinate ?? locationManager.coordinate
 
+                        let resolvedHourly: [(date: Date, tempF: Double)] =
+                            !hourly.isEmpty
+                                ? hourly
+                                : (coord != nil && dayDate != nil
+                                    ? noaaHourlyVM.hourlyTuples(for: coord!, day: dayDate!)
+                                    : [])
+                        
                         let useCelsius = isInternationalFavorite
 
                         // Safety: only trust provided hi/lo when this is a WeatherAPI-driven detail payload.
@@ -1934,6 +1971,7 @@ struct ContentView: View {
 
 //  MARK: OPENRADAR
     private func openRadar() {
+        print("[NET] Radar START caller=openRadar")
         // compute the new target first
         let newTarget: RadarTarget?
 
@@ -2128,6 +2166,7 @@ struct ContentView: View {
     // MARK: - Async refresh
 
     private func refreshCurrentIfNeeded() async {
+        print("[NET] WeatherAPI forecast START caller=refreshCurrentIfNeeded")
         // ✅ PWS current conditions come from Weather.com (station-based), not WeatherAPI.
         // Do not gate this on a coordinate; coordinates are only needed to anchor WeatherAPI forecasts.
         if source == .pws {
@@ -2158,6 +2197,7 @@ struct ContentView: View {
         // ✅ WeatherAPI current (international favorites when in NOAA+ mode)
         if source == .noaa && shouldUseWeatherApiForCurrent {
             viewModel.setLoadingPlaceholders()
+            viewModel.errorMessage = nil  // clear any stale NOAA error pill before WeatherAPI refresh
 
             await weatherApiCurrentVM.refresh(for: coord)
 
@@ -2248,6 +2288,7 @@ struct ContentView: View {
     
     
     private func refreshNow() async {
+ //       print("[REFRESH] refreshNow source=\(sourceRaw) fav=\(selection.selectedFavorite?.displayName ?? "nil") gps=\(locationManager.coordinate != nil)")
         // Effective current refresh for tiles:
         // - WeatherAPI current when appropriate
         // - otherwise NOAA current
@@ -2256,7 +2297,7 @@ struct ContentView: View {
 
     private func refreshNOAACurrent() async {
         if let f = selection.selectedFavorite {
-    //        print("🛰️ NOAA refresh → favorite \(f.displayName) lat=\(f.coordinate.latitude), lon=\(f.coordinate.longitude)")
+            print("🛰️ NOAA refresh → favorite \(f.displayName) lat=\(f.coordinate.latitude), lon=\(f.coordinate.longitude)")
             await viewModel.fetchCurrentFromNOAA(
                 lat: f.coordinate.latitude,
                 lon: f.coordinate.longitude,
@@ -2272,7 +2313,10 @@ struct ContentView: View {
     }
 
     private func refreshForecastNow() async {
-        guard source == .noaa else { return } // forecasts are NOAA only
+        print("[REFRESH] refreshForecastNow source=\(sourceRaw) fav=\(selection.selectedFavorite?.displayName ?? "nil") gps=\(locationManager.coordinate != nil)")
+
+        // ✅ Forecast is NOAA only for US/Canada (i.e. when we're NOT in WeatherAPI fallback mode).
+        guard source == .noaa, !shouldUseWeatherApiForCurrent else { return }
 
         if let f = selection.selectedFavorite {
             await forecastVM.refresh(for: f.coordinate)
@@ -2786,14 +2830,53 @@ final class NOAAHourlyForecastViewModel: ObservableObject {
     @Published private var hourlyByKey: [String: [(date: Date, tempF: Double)]] = [:]
     private var loadingKeys: Set<String> = []
 
-    func hourlyTuples(for day: Date) -> [(date: Date, tempF: Double)] {
-        hourlyByKey[dayKey(day)] ?? []
+    func hourlyTuples(for coord: CLLocationCoordinate2D, day: Date) -> [(date: Date, tempF: Double)] {
+        let k = hourlyKey(for: coord, day: day)
+        return hourlyByKey[k] ?? []
+    }
+
+//    func loadIfNeeded(for coord: CLLocationCoordinate2D, day: Date) async {
+//        
+//        let k = dayKey(day)
+//        guard hourlyByKey[k] == nil else { return }
+//        guard !loadingKeys.contains(k) else { return }
+//        loadingKeys.insert(k)
+//        defer { loadingKeys.remove(k) }
+//
+//        do {
+//            let hourlyURL = try await forecastHourlyURL(for: coord)
+//            let points = try await fetchHourly(from: hourlyURL)
+//
+//            let cal = Calendar.current
+//            let start = cal.startOfDay(for: day)
+//            guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return }
+//
+//            let filtered = points
+//                .filter { $0.date >= start && $0.date < end }
+//                .sorted { $0.date < $1.date }
+//
+//            hourlyByKey[k] = filtered
+//        } catch {
+//            hourlyByKey[k] = []
+//        }
+//    }
+    
+    
+    private func hourlyKey(for coord: CLLocationCoordinate2D, day: Date) -> String {
+        let dayStr = dayKey(day) // keep your existing normalizer
+        // 4 decimals ~ 11m; stable enough to distinguish favorites, not too noisy
+        return String(format: "%.4f,%.4f|%@", coord.latitude, coord.longitude, dayStr)
     }
 
     func loadIfNeeded(for coord: CLLocationCoordinate2D, day: Date) async {
-        let k = dayKey(day)
+        let k = hourlyKey(for: coord, day: day)
+
+        // Already cached for this (coord, day)
         guard hourlyByKey[k] == nil else { return }
+
+        // Already loading for this (coord, day)
         guard !loadingKeys.contains(k) else { return }
+
         loadingKeys.insert(k)
         defer { loadingKeys.remove(k) }
 
@@ -2814,6 +2897,8 @@ final class NOAAHourlyForecastViewModel: ObservableObject {
             hourlyByKey[k] = []
         }
     }
+    
+    
 
     private func dayKey(_ day: Date) -> String {
         let cal = Calendar.current
@@ -2829,7 +2914,7 @@ final class NOAAHourlyForecastViewModel: ObservableObject {
         let url = URL(string: "https://api.weather.gov/points/\(coord.latitude),\(coord.longitude)")!
         var req = URLRequest(url: url)
         req.setValue("YAWA", forHTTPHeaderField: "User-Agent")
-
+        print("[NET] func forecastHourlyURL START \(Date())")
         let (data, _) = try await URLSession.shared.data(for: req)
         let decoded = try JSONDecoder().decode(PointsResponse.self, from: data)
 
@@ -2842,7 +2927,7 @@ final class NOAAHourlyForecastViewModel: ObservableObject {
     private func fetchHourly(from url: URL) async throws -> [(date: Date, tempF: Double)] {
         var req = URLRequest(url: url)
         req.setValue("YAWA", forHTTPHeaderField: "User-Agent")
-
+        print("[NET] func fetchHourly START \(Date())")
         let (data, _) = try await URLSession.shared.data(for: req)
         let decoded = try JSONDecoder().decode(HourlyForecastResponse.self, from: data)
 
@@ -3046,6 +3131,73 @@ private struct LocationsSheet: View {
     @FocusState private var searchFocused: Bool
     @State private var justAddedResultID: CitySearchViewModel.Result.ID? = nil
 
+    // Cache per-result subtitle so Results matches how Favorites will be saved.
+    @State private var resolvedSubtitleByResultID: [CitySearchViewModel.Result.ID: String] = [:]
+    // Cache by rounded coordinate so we don’t re-geocode the same city
+    @State private var resolvedSubtitleByCoordKey: [String: String] = [:]
+
+    // Reuse one geocoder (don’t create one per row)
+    private let geocoder = CLGeocoder()
+    
+    
+    private func coordKey(for r: CitySearchViewModel.Result) -> String {
+        let c = r.coordinate
+        // ~0.001° ≈ 111m latitude; good enough for caching city-level subtitles
+        return String(format: "%.3f,%.3f", c.latitude, c.longitude)
+    }
+
+    private func resolvedSubtitle(for r: CitySearchViewModel.Result) -> String {
+        if let v = resolvedSubtitleByResultID[r.id] { return v }
+        if let v = resolvedSubtitleByCoordKey[coordKey(for: r)] { return v }
+        return r.subtitle
+    }
+    
+    
+    private func resolveSubtitleIfNeeded(for r: CitySearchViewModel.Result) async {
+        if resolvedSubtitleByResultID[r.id] != nil { return }
+
+        let key = coordKey(for: r)
+        if let cached = resolvedSubtitleByCoordKey[key] {
+            await MainActor.run { resolvedSubtitleByResultID[r.id] = cached }
+            return
+        }
+
+        var subtitle = r.subtitle
+
+        // Tiny debounce so we don’t thrash while results are still settling
+        try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
+        if Task.isCancelled { return }
+
+        do {
+            // Cancel any in-flight geocode before starting a new one
+            geocoder.cancelGeocode()
+
+            let c = r.coordinate
+            let placemarks = try await geocoder.reverseGeocodeLocation(
+                CLLocation(latitude: c.latitude, longitude: c.longitude)
+            )
+
+            if let pm = placemarks.first {
+                let iso = (pm.isoCountryCode ?? "").uppercased()
+                let country = pm.country ?? ""
+                let admin = pm.administrativeArea ?? ""
+
+                if iso == "US" || iso == "CA" {
+                    if !admin.isEmpty { subtitle = admin }
+                } else {
+                    if !country.isEmpty { subtitle = country }
+                }
+            }
+        } catch {
+            // keep subtitle as-is on cancel/failure
+        }
+
+        await MainActor.run {
+            resolvedSubtitleByCoordKey[key] = subtitle
+            resolvedSubtitleByResultID[r.id] = subtitle
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -3063,6 +3215,11 @@ private struct LocationsSheet: View {
                             .focused($searchFocused)
                             .foregroundStyle(YAWATheme.textPrimary)
                             .onSubmit { Task { await searchVM.search() } }
+                            .onChange(of: searchVM.results.map(\.id)) { _, _ in
+                                geocoder.cancelGeocode()
+                                resolvedSubtitleByResultID = [:]
+                                // Keep coord cache; it helps across searches and costs little memory
+                            }
 
                         if searchVM.isSearching {
                             ProgressView().controlSize(.small)
@@ -3086,17 +3243,24 @@ private struct LocationsSheet: View {
 
                 // MARK: - Search Results
                 if !searchVM.results.isEmpty {
+                    let topResolveIDs = Set(searchVM.results.prefix(2).map { $0.id })
                     Section {
+  //                      let topResolveIDs = Set(searchVM.results.prefix(2).map(\.id))
                         ForEach(Array(searchVM.results.prefix(8))) { r in
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(r.title)
                                         .foregroundStyle(YAWATheme.textPrimary)
 
-                                    if !r.subtitle.isEmpty {
-                                        Text(r.subtitle)
+                                    let sub = resolvedSubtitle(for: r)
+                                    if !sub.isEmpty {
+                                        Text(sub)
                                             .font(.subheadline)
                                             .foregroundStyle(YAWATheme.textSecondary)
+                                            .task(id: r.id) {
+                                                guard topResolveIDs.contains(r.id) else { return }
+                                                await resolveSubtitleIfNeeded(for: r)
+                                            }
                                     }
                                 }
 
@@ -3115,23 +3279,39 @@ private struct LocationsSheet: View {
                                 if previousSourceRaw == nil { previousSourceRaw = sourceRaw }
                                 sourceRaw = CurrentConditionsSource.noaa.rawValue
 
-                                let f = FavoriteLocation(
-                                    title: r.title,
-                                    subtitle: r.subtitle,
-                                    latitude: r.coordinate.latitude,
-                                    longitude: r.coordinate.longitude
-                                )
+                                // Build the favorite asynchronously so we can prefer Country for non-US/CA
+                                Task {
+                                    // Prefer the resolved subtitle shown in Results (Country for most non-US/CA).
+                                    var subtitle = resolvedSubtitleByResultID[r.id] ?? r.subtitle
 
-                                favorites.add(f)
-                                selection.selectedFavorite = f
+                                    if resolvedSubtitleByResultID[r.id] == nil {
+                                        // If we haven't resolved yet, do a one-off resolve now.
+                                        await resolveSubtitleIfNeeded(for: r)
+                                        subtitle = resolvedSubtitleByResultID[r.id] ?? subtitle
+                                    }
 
-                                // Give the star-fill a brief moment to render, then dismiss
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
-                                    justAddedResultID = nil
-                                    searchVM.query = ""
-                                    searchVM.results = []
-                                    searchFocused = false
-                                    showingLocations = false
+                                    let coord = r.coordinate
+
+                                    let f = FavoriteLocation(
+                                        title: r.title,
+                                        subtitle: subtitle,
+                                        latitude: coord.latitude,
+                                        longitude: coord.longitude
+                                    )
+
+                                    await MainActor.run {
+                                        favorites.add(f)
+                                        selection.selectedFavorite = f
+
+                                        // Give the star-fill a brief moment to render, then dismiss
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                                            justAddedResultID = nil
+                                            searchVM.query = ""
+                                            searchVM.results = []
+                                            searchFocused = false
+                                            showingLocations = false
+                                        }
+                                    }
                                 }
                             }
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))

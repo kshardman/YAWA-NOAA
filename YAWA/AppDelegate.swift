@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
 
     private func scheduleAppRefresh() {
+        print("[NET] AppDelegate START caller=scheduleAppRefresh")
         let request = BGAppRefreshTaskRequest(identifier: Self.refreshTaskId)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
 

@@ -188,7 +188,7 @@ final class WeatherViewModel: ObservableObject {
     /// - force: bypasses cooldown (used for pull-to-refresh)
     @discardableResult
     func fetchWeather(force: Bool = false) async -> Bool {
-
+        print("[NET] fetchWeather- (PWS) current START \(Date())")
         // If manual refresh, cancel whatever is currently running and start fresh
         if force {
             activeFetchTask?.cancel()
@@ -246,7 +246,7 @@ final class WeatherViewModel: ObservableObject {
 //    @MainActor
     @MainActor
     func fetchCurrentFromNOAA(lat: Double, lon: Double, locationName: String? = nil) async {
-//        print("🛰️ NOAA current conditions lookup → lat=\(lat), lon=\(lon), locationName=\(locationName ?? "nil")")
+        print("🛰️ NOAA current conditions lookup → lat=\(lat), lon=\(lon), locationName=\(locationName ?? "nil")")
         do {
             let result = try await noaaCurrent.fetchLatestObservation(lat: lat, lon: lon)
             noaaStationID = result.stationId
@@ -324,7 +324,7 @@ final class WeatherViewModel: ObservableObject {
             if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
 
             // Optional: log the real error while debugging
-//            print("NOAA current conditions error:", error)
+            print("NOAA current conditions error:", error)
 
             errorMessage = "NOAA current conditions unavailable."
         }

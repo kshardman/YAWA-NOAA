@@ -12,21 +12,46 @@ import CoreLocation
 
 struct FavoriteLocation: Identifiable, Codable, Equatable {
     let id: UUID
-    var title: String      // City
-    var subtitle: String   // State
+    var title: String          // City
+    var subtitle: String       // State / Province (only used for US/CA)
+    var country: String?       // e.g. "Ireland"
+    var isoCountryCode: String? // e.g. "IE"
     var latitude: Double
     var longitude: Double
 
-    init(title: String, subtitle: String, latitude: Double, longitude: Double) {
+    init(
+        title: String,
+        subtitle: String,
+        country: String? = nil,
+        isoCountryCode: String? = nil,
+        latitude: Double,
+        longitude: Double
+    ) {
         self.id = UUID()
         self.title = title
         self.subtitle = subtitle
+        self.country = country
+        self.isoCountryCode = isoCountryCode
         self.latitude = latitude
         self.longitude = longitude
     }
 
     var displayName: String {
-        subtitle.isEmpty ? title : "\(title), \(subtitle)"
+        let city = title
+        let cc = isoCountryCode ?? ""
+
+        if cc == "US" || cc == "CA" {
+            // City, State/Province
+            return subtitle.isEmpty ? city : "\(city), \(subtitle)"
+        }
+
+        // Everywhere else: City, Country (ignore admin regions like Irish counties)
+        if let country, !country.isEmpty {
+            return "\(city), \(country)"
+        }
+
+        // Fallback
+        return subtitle.isEmpty ? city : "\(city), \(subtitle)"
     }
 
     var coordinate: CLLocationCoordinate2D {
@@ -43,7 +68,9 @@ final class FavoritesStore: ObservableObject {
 
     func add(_ loc: FavoriteLocation) {
         if favorites.contains(where: {
-            $0.title == loc.title && $0.subtitle == loc.subtitle
+            $0.title == loc.title
+            && $0.subtitle == loc.subtitle
+            && ($0.isoCountryCode ?? "") == (loc.isoCountryCode ?? "")
         }) {
             return
         }

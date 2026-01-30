@@ -23,7 +23,7 @@ enum RadarTilePrefetcher {
                     var req = URLRequest(url: url)
                     req.cachePolicy = .returnCacheDataElseLoad
                     req.timeoutInterval = 6
-
+                    print("[NET] prefetchRadar current START \(Date())")
                     _ = try? await URLSession.shared.data(for: req)
                 }
             }

@@ -37,6 +37,7 @@ final class RainViewerRadarService {
     }
 
     func fetchWeatherMaps() async throws -> RainViewerWeatherMapsResponse {
+        print("[NET] RainViewer START caller=fetchWeatherMaps")
         let url = URL(string: "https://api.rainviewer.com/public/weather-maps.json")!
         let (data, resp) = try await session.data(from: url)
         if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
