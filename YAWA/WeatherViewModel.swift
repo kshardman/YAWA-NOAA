@@ -34,8 +34,7 @@ final class WeatherViewModel: ObservableObject {
     @Published var temperatureF: Double?
     @Published var precipitationInches: Double?
     @Published var currentLocationLabel: String = ""
-    @Published var pwsStationName: String = ""
-    @Published var pwsLabel: String = ""
+ 
 
     // MARK: - Fetch tracking
 
@@ -49,13 +48,11 @@ final class WeatherViewModel: ObservableObject {
     private var pendingForceRefresh = false
     private var activeFetchTask: Task<Bool, Never>?
 
-    private let service = WeatherService()
     private let noaaCurrent = NOAACurrentConditionsService()
     
     @Published var activeCoordinate: CLLocationCoordinate2D? = nil
     @Published var activeLocationTitle: String = "Current Location"
     
-    @Published var pwsStationCoordinate: CLLocationCoordinate2D?
    
     // ✅ Visual cue: clear tile values while we fetch new data
     func setLoadingPlaceholders() {
@@ -118,19 +115,7 @@ final class WeatherViewModel: ObservableObject {
     }
  
     // MARK: - PWS helpers
-    func loadPwsLabelIfNeeded() {
-        guard pwsLabel.isEmpty else { return }
-
-        let sid = (UserDefaults.standard.string(forKey: "pwsStationID") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if !sid.isEmpty {
-            pwsLabel = sid
-        } else {
-            // Fallback to bundled config.plist for backwards compatibility
-            pwsLabel = (try? configValue("stationID")) ?? ""
-        }
-    }
+  
 
     // MARK: - Derived UI state
 
@@ -141,10 +126,7 @@ final class WeatherViewModel: ObservableObject {
 
     // MARK: - Public API
 
-    func loadCached() {
-        guard let snap = WeatherCache.load() else { return }
-        apply(snap)
-    }
+
     
     func refreshCurrentConditions(
         source: CurrentConditionsSource,
@@ -162,88 +144,12 @@ final class WeatherViewModel: ObservableObject {
                 lon: coord.longitude,
                 locationName: locationName   // ✅ do NOT fall back to currentLocationLabel
             )
-
-        case .pws:
-            loadPwsLabelIfNeeded()
-            // Don’t blank tiles during refresh; keep last known PWS values while fetching.
-            errorMessage = nil
-
-            do {
-                let snap = try await service.fetchCurrent()
-                apply(snap)
-                WeatherCache.save(snap)
-                lastSuccess = Date()
-                errorMessage = nil
-            } catch {
-                // Treat cancellations as normal (don’t show an error)
-                if error is CancellationError { return }
-                if let urlErr = error as? URLError, urlErr.code == .cancelled { return }
-
-                errorMessage = userFriendly(error)
-            }
         }
     }
     
     /// Fetches weather from the network.
     /// - force: bypasses cooldown (used for pull-to-refresh)
-    @discardableResult
-    func fetchWeather(force: Bool = false) async -> Bool {
-        print("[NET] fetchWeather- (PWS) current START \(Date())")
-        // If manual refresh, cancel whatever is currently running and start fresh
-        if force {
-            activeFetchTask?.cancel()
-            pendingForceRefresh = false
-            errorMessage = nil
-        }
 
-        // If a task is already running and this isn't forced, just return
-        if let task = activeFetchTask, !task.isCancelled {
-            if force { pendingForceRefresh = true }
-            return false
-        }
-
-        let task = Task<Bool, Never> { [weak self] in
-            guard let self else { return false }
-
-            self.isFetching = true
-            defer { self.isFetching = false }
-
-            do {
-                let snap = try await self.service.fetchCurrent()
-                self.apply(snap)
-                WeatherCache.save(snap)
-                self.lastSuccess = Date()
-                self.errorMessage = nil
-
-                if force {
-                    self.lastUpdated = Date()   // ✅ Updated just now on manual refresh
-                }
-
-                return true
-            } catch {
-                // Cancellation is expected when we force-refresh
-                if error is CancellationError { return false }
-                if let urlErr = error as? URLError, urlErr.code == .cancelled { return false }
-
-                self.errorMessage = userFriendly(error)
-                return false
-            }
-        }
-
-        activeFetchTask = task
-        let ok = await task.value
-        activeFetchTask = nil
-
-        // If a force refresh was queued during a non-forced fetch, run it now
-        if pendingForceRefresh {
-            pendingForceRefresh = false
-            return await fetchWeather(force: true)
-        }
-
-        return ok
-    }
-
-//    @MainActor
     @MainActor
     func fetchCurrentFromNOAA(lat: Double, lon: Double, locationName: String? = nil) async {
         print("🛰️ NOAA current conditions lookup → lat=\(lat), lon=\(lon), locationName=\(locationName ?? "nil")")
@@ -329,50 +235,23 @@ final class WeatherViewModel: ObservableObject {
             errorMessage = "NOAA current conditions unavailable."
         }
     }
-    
-    
-    // MARK: - Private helpers
 
-    private func apply(_ snap: WeatherService.Snapshot) {
-
-        // ---- Numeric values (used for theme logic) ----
-        temperatureF = Double(snap.tempF)
-        precipitationInches = Double(snap.precip) ?? 0.0
-
-        // ---- Display strings ----
-        temp = "\(snap.tempF)°"
-        humidity = "\(snap.humidityPct)%"
-        wind = "\(snap.windSpeed)"
-        windGust = "\(snap.windGust)"
-        windDirectionDegrees = snap.windDirDegrees
-        windDirection = snap.windDirText
-        pressure = snap.pressure
-        precipitation = String(format: "%.2f in", Double(snap.precip) ?? 0.0)
-        lastUpdated = snap.lastUpdated
-
-        // ---- PWS station coordinate (used to anchor WeatherAPI forecast in PWS mode) ----
-        if let lat = snap.stationLat, let lon = snap.stationLon {
-            pwsStationCoordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-        } else {
-            pwsStationCoordinate = nil
-        }
-    }
 }
 
 // MARK: - Error formatting
 
 private func userFriendly(_ error: Error) -> String {
 
-    if let e = error as? WeatherService.ServiceError {
-        switch e {
-        case .missingConfigFile:
-            return "Missing config.plist in app bundle"
-        case .missingKey(let key):
-            return "Missing \(key) in config.plist"
-        default:
-            return "Weather service error"
-        }
-    }
+//    if let e = error as? WeatherService.ServiceError {
+//        switch e {
+//        case .missingConfigFile:
+//            return "Missing config.plist in app bundle"
+//        case .missingKey(let key):
+//            return "Missing \(key) in config.plist"
+//        default:
+//            return "Weather service error"
+//        }
+//    }
 
     if let url = error as? URLError {
         switch url.code {
@@ -403,17 +282,17 @@ private func extractNumber(from text: String) -> Int {
 
 // MARK: - Simple cache
 
-enum WeatherCache {
-    private static let key = "latestWeatherSnapshot"
-
-    static func save(_ snap: WeatherService.Snapshot) {
-        if let data = try? JSONEncoder().encode(snap) {
-            UserDefaults.standard.set(data, forKey: key)
-        }
-    }
-
-    static func load() -> WeatherService.Snapshot? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(WeatherService.Snapshot.self, from: data)
-    }
-}
+//enum WeatherCache {
+//    private static let key = "latestWeatherSnapshot"
+//
+//    static func save(_ snap: WeatherService.Snapshot) {
+//        if let data = try? JSONEncoder().encode(snap) {
+//            UserDefaults.standard.set(data, forKey: key)
+//        }
+//    }
+//
+//    static func load() -> WeatherService.Snapshot? {
+//        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+//        return try? JSONDecoder().decode(WeatherService.Snapshot.self, from: data)
+//    }
+//}

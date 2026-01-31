@@ -53,13 +53,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         }
 
         Task {
-            do {
-                let snap = try await WeatherService().fetchCurrent()
-                WeatherCache.save(snap)
-                task.setTaskCompleted(success: true)
-            } catch {
-                task.setTaskCompleted(success: false)
-            }
+            // Background refresh placeholder.
+            // If you want to prefetch NOAA data later, wire it up here.
+            task.setTaskCompleted(success: true)
         }
     }
 }

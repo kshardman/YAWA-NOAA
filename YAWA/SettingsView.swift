@@ -26,10 +26,9 @@ private enum LaunchLocationMode: String, CaseIterable, Identifiable {
 }
 
 struct SettingsView: View {
-    @AppStorage("pwsStationID") private var stationID: String = ""
-    @AppStorage("pwsApiKey") private var apiKey: String = ""
+  
 
-    @AppStorage("weatherApiKey") private var weatherApiKey: String = ""
+    
 
     @AppStorage("homeEnabled") private var homeEnabled: Bool = false
     @AppStorage("homeLat") private var homeLat: Double = 0
@@ -49,13 +48,8 @@ struct SettingsView: View {
     // Draft editing (so the API Keys sheet can Cancel/Back without saving)
     @State private var draftStationID: String = ""
     @State private var draftApiKey: String = ""
-    @State private var draftWeatherApiKey: String = ""
 
-    @State private var draftShowPwsKey = false
-    @State private var draftCopiedPwsKey = false
 
-    @State private var draftShowWeatherApiKey = false
-    @State private var draftCopiedWeatherApiKey = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -78,7 +72,6 @@ struct SettingsView: View {
 
                 List {
                     notificationsSection
-                    sourceSection
                     launchSection
                     homeSection
                     privacySection
@@ -117,34 +110,6 @@ struct SettingsView: View {
                 await notifications.refreshAuthorizationStatus()
 
                 // Seed defaults from config.plist only if user hasn't entered anything yet
-                if !loadedDefaults {
-                    loadedDefaults = true
-
-                    if stationID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        if let v = try? configValue("stationID") {
-                            stationID = v
-                        }
-                    }
-
-                    if apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        if let v = try? configValue("WU_API_KEY") {
-                            apiKey = v
-                        }
-                    }
-
-                    if weatherApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        if let v = try? configValue("WEATHERAPI_KEY") {
-                            weatherApiKey = v
-                        }
-                    }
-                }
-                // Keep drafts in sync with persisted values (used by API Keys sheet)
-                draftStationID = stationID
-                draftApiKey = apiKey
-                draftWeatherApiKey = weatherApiKey
-            }
-            .sheet(isPresented: $showingApiKeys) {
-                apiKeysSheet
             }
         }
     }
@@ -177,6 +142,8 @@ private extension SettingsView {
         .listRowBackground(YAWATheme.card2)
         .listRowSeparator(.hidden)
     }
+
+
     var homeSection: some View {
         let radiusMeters: Double = 100
         let hasFix = locationManager.coordinate != nil
@@ -251,10 +218,12 @@ private extension SettingsView {
         .listRowBackground(YAWATheme.card2)
         .listRowSeparator(.hidden)
     }
+
+
     var privacySection: some View {
         Section(header: Text("Privacy").font(.subheadline.weight(.semibold)).foregroundStyle(YAWATheme.textPrimary)) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("YAWA uses your location to show nearby conditions, forecasts, and radar. Your API keys and station ID are stored on-device. Data is fetched from NOAA/weather.gov and, when enabled, Weather.com PWS and WeatherAPI.com.")
+                Text("YAWA uses your location to show nearby conditions, forecasts, and radar. Your API keys and station ID are stored on-device. Data is fetched from NOAA/weather.gov")
                     .font(.caption)
                     .foregroundStyle(YAWATheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -336,62 +305,6 @@ private extension SettingsView {
         .listRowSeparator(.hidden)
     }
 
-    var sourceSection: some View {
-        Section {
-            // ✅ Simple mode picker (NOAA vs PWS)
-            Picker("Current Conditions Source", selection: $sourceRaw) {
-                Text("NOAA+").tag(CurrentConditionsSource.noaa.rawValue)
-                Text("PWS").tag(CurrentConditionsSource.pws.rawValue)
-            }
-            .pickerStyle(.segmented)
-
-            // Helpful subtitle / explanation
-            VStack(alignment: .leading, spacing: 6) {
-                Text(source == .noaa
-                     ? "NOAA+ uses NOAA (weather.gov) for U.S. conditions and forecasts.  For international conditions and forecasts, weatherapi.com is used."
-                     : "PWS mode uses your weather.com stationID and API key to obtain current conditions.  For forecasts at your stationID, weatherAPI.com API key is used.")
-                    .font(.caption)
-                    .foregroundStyle(YAWATheme.textSecondary)
-            }
-            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-
-            // ✅ Tappable row to edit keys in a dedicated sheet
-            Button {
-                // Seed drafts each time we open
-                draftStationID = stationID
-                draftApiKey = apiKey
-                draftWeatherApiKey = weatherApiKey
-
-                draftShowPwsKey = false
-                draftCopiedPwsKey = false
-                draftShowWeatherApiKey = false
-                draftCopiedWeatherApiKey = false
-
-                showingApiKeys = true
-            } label: {
-                HStack {
-                    Text("API Keys")
-                        .foregroundStyle(YAWATheme.textPrimary)
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        } header: {
-            Text("Current Conditions Source")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(YAWATheme.textPrimary)
-        }
-        .textCase(nil)
-        .listRowBackground(YAWATheme.card2)
-        .listRowSeparator(.hidden)
-    }
-
 
     var aboutSection: some View {
         Section("About") {
@@ -408,164 +321,6 @@ private extension SettingsView {
         }
         .listRowBackground(YAWATheme.card2)
         .listRowSeparator(.hidden)
-    }
-
-    var apiKeysSheet: some View {
-        NavigationStack {
-            ZStack {
-                YAWATheme.sky.ignoresSafeArea()
-
-                List {
-                    Section {
-                        LabeledContent("Station") {
-                            TextField("Enter station ID", text: $draftStationID)
-                                .font(.body.weight(.semibold))
-                                .monospaced()
-                                .foregroundStyle(YAWATheme.textPrimary)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled(true)
-                                .keyboardType(.asciiCapable)
-                                .textContentType(.none)
-                                .multilineTextAlignment(.trailing)
-                        }
-
-                        LabeledContent("PWS API Key") {
-                            Group {
-                                if draftShowPwsKey {
-                                    TextField("Enter PWS API key", text: $draftApiKey)
-                                } else {
-                                    SecureField("Enter PWS API key", text: $draftApiKey)
-                                }
-                            }
-                            .font(.body.weight(.semibold))
-                            .monospaced()
-                            .foregroundStyle(YAWATheme.textPrimary)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled(true)
-                            .keyboardType(.asciiCapable)
-                            .textContentType(.none)
-                            .multilineTextAlignment(.trailing)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        }
-
-                        HStack(spacing: 12) {
-                            Button(draftShowPwsKey ? "Hide" : "Reveal") {
-                                draftShowPwsKey.toggle()
-                            }
-
-                            Button(draftCopiedPwsKey ? "Copied" : "Copy") {
-                                UIPasteboard.general.string = draftApiKey
-                                draftCopiedPwsKey = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                                    draftCopiedPwsKey = false
-                                }
-                            }
-                            .disabled(draftApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(YAWATheme.accent)
-
-                        LabeledContent("WeatherAPI Key") {
-                            Group {
-                                if draftShowWeatherApiKey {
-                                    TextField("Enter WeatherAPI key", text: $draftWeatherApiKey)
-                                } else {
-                                    SecureField("Enter WeatherAPI key", text: $draftWeatherApiKey)
-                                }
-                            }
-                            .font(.body.weight(.semibold))
-                            .monospaced()
-                            .foregroundStyle(YAWATheme.textPrimary)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled(true)
-                            .keyboardType(.asciiCapable)
-                            .textContentType(.none)
-                            .multilineTextAlignment(.trailing)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        }
-
-                        HStack(spacing: 12) {
-                            Button(draftShowWeatherApiKey ? "Hide" : "Reveal") {
-                                draftShowWeatherApiKey.toggle()
-                            }
-
-                            Button(draftCopiedWeatherApiKey ? "Copied" : "Copy") {
-                                UIPasteboard.general.string = draftWeatherApiKey
-                                draftCopiedWeatherApiKey = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                                    draftCopiedWeatherApiKey = false
-                                }
-                            }
-                            .disabled(draftWeatherApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(YAWATheme.accent)
-                    } header: {
-                        Text("API Keys")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(YAWATheme.textPrimary)
-                    } footer: {
-                        Text("These keys are stored on-device using AppStorage. You can set them anytime, even while using NOAA mode.")
-                            .foregroundStyle(YAWATheme.textSecondary)
-                    }
-                    .listRowBackground(YAWATheme.card2)
-                    .listRowSeparator(.hidden)
-                }
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .listStyle(.insetGrouped)
-            }
-            .navigationTitle("API Keys")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showingApiKeys = false
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(Color.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.thinMaterial)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        stationID = draftStationID.trimmingCharacters(in: .whitespacesAndNewlines)
-                        apiKey = draftApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-                        weatherApiKey = draftWeatherApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-                        showingApiKeys = false
-                    }
-                    .buttonStyle(.plain)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(Color.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(.thinMaterial)
-                    .clipShape(Capsule())
-                    .disabled(!apiKeysDirty)
-                    .opacity(apiKeysDirty ? 1.0 : 0.55)
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-    }
-
-    private var apiKeysDirty: Bool {
-        draftStationID.trimmingCharacters(in: .whitespacesAndNewlines) != stationID.trimmingCharacters(in: .whitespacesAndNewlines)
-        || draftApiKey.trimmingCharacters(in: .whitespacesAndNewlines) != apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        || draftWeatherApiKey.trimmingCharacters(in: .whitespacesAndNewlines) != weatherApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var appVersion: String {

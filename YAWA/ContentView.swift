@@ -59,7 +59,6 @@ struct ContentView: View {
     @StateObject private var locationManager = LocationManager()
     @StateObject private var searchVM = CitySearchViewModel()
     @StateObject private var forecastVM = ForecastViewModel()
-    @StateObject private var weatherApiForecastViewModel = WeatherAPIForecastViewModel()
     
     @StateObject private var noaaHourlyVM = NOAAHourlyForecastViewModel()
     
@@ -70,11 +69,11 @@ struct ContentView: View {
     @State private var pendingForegroundRefresh = false
     @State private var didRunInitialRefresh = false
     @State private var suppressCoordinateRefresh = true
-
+    
     private let refreshMaxAge: TimeInterval = 15 * 60   // 15 minutes
     private let refreshDistanceMeters: CLLocationDistance = 1500 // ~1.5 km
     
-
+    
     @EnvironmentObject private var favorites: FavoritesStore
     @EnvironmentObject private var selection: LocationSelectionStore
     
@@ -84,30 +83,7 @@ struct ContentView: View {
     
     @State private var radarTarget: RadarTarget?
     
-    @State private var selectedFavoriteCountryCode: String? = nil
     
-    @StateObject private var weatherApiCurrentVM = WeatherAPICurrentViewModel()
- 
-    private var effectiveWeatherApiCoordinate: CLLocationCoordinate2D? {
-        // In PWS mode, anchor WeatherAPI current + forecast to the station coordinate.
-        if source == .pws {
-            return viewModel.pwsStationCoordinate
-        }
-
-        // Favorites: use the favorite coordinate.
-        if let fav = selection.selectedFavorite {
-            return fav.coordinate
-        }
-
-        // Otherwise follow the active GPS coordinate.
-        return locationManager.coordinate
-    }
-    
-    private var weatherApiCoordKey: String {
-        guard let c = effectiveWeatherApiCoordinate else { return "weatherapi:none" }
-        // 4 decimals ~= ~11m precision; plenty to distinguish favorites
-        return String(format: "weatherapi:%.4f,%.4f", c.latitude, c.longitude)
-    }
     
     // nil = “use GPS”; non-nil = user selected a city/favorite
     @State private var selectedCity: CitySearchViewModel.Result?
@@ -122,7 +98,7 @@ struct ContentView: View {
                 title: title
             )
         }
-
+        
         // 2) Otherwise fall back to GPS
         if let coord = locationManager.coordinate {
             return RadarTarget(
@@ -131,26 +107,26 @@ struct ContentView: View {
                 title: locationManager.locationName ?? "Current Location"
             )
         }
-
+        
         // 3) No location available yet
         return nil
     }
     
     let sideCol: CGFloat = 120 // tweak 110–140 to taste
-
+    
     private enum DetailBody {
         case text(String)
         case alert(description: String?, instructions: [String], severity: String?, issuedAt: Date?)
         case forecast(day: String?, night: String?, dayDate: Date?, hiF: Int?, loF: Int?, hourly: [(date: Date, tempF: Double)])
     }
     // MARK: - Swipeable forecast detail paging
-
+    
     private struct ForecastPagerPayload: Identifiable {
         let id = UUID()
         let pages: [ForecastPage]
         let initialPageID: String
     }
-
+    
     private struct ForecastPage: Identifiable {
         let id: String                  // stable per-day identifier
         let title: String               // e.g. "Tue 1/28"
@@ -161,22 +137,22 @@ struct ContentView: View {
         let loF: Int?
         let hourly: [(date: Date, tempF: Double)] // non-empty => WeatherAPI (or preloaded)
     }
-
+    
     private struct DetailPayload: Identifiable {
         let id = UUID()
         let title: String
         let body: DetailBody
-
+        
         init(title: String, body: String) {
             self.title = title
             self.body = .text(body)
         }
-
+        
         init(title: String, description: String?, instructions: [String], severity: String?, issuedAt: Date?) {
             self.title = title
             self.body = .alert(description: description, instructions: instructions, severity: severity, issuedAt: issuedAt)
         }
-
+        
         init(
             title: String,
             day: String?,
@@ -207,30 +183,30 @@ struct ContentView: View {
         let cleaned = text
             .replacingOccurrences(of: "\r", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-
+        
         let patterns = [
             ("WHAT", "WHAT"),
             ("WHEN", "WHEN"),
             ("IMPACTS", "IMPACTS")
         ]
-
+        
         var sections: [LegacyAlertSection] = []
-
+        
         for (key, title) in patterns {
             if let range = cleaned.range(of: "\(key)...") {
                 let start = range.upperBound
- //               let remainder = cleaned[start...]
-
+                //               let remainder = cleaned[start...]
+                
                 let end = patterns
                     .compactMap { cleaned.range(of: "\($0.0)...", range: start..<cleaned.endIndex)?.lowerBound }
                     .min() ?? cleaned.endIndex
-
+                
                 let body = cleaned[start..<end]
                     .replacingOccurrences(of: "\n\n", with: "\n")
                     .split(separator: "\n")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
                     .filter { !$0.isEmpty }
-
+                
                 if !body.isEmpty {
                     sections.append(
                         LegacyAlertSection(title: title.capitalized, paragraphs: body)
@@ -238,19 +214,19 @@ struct ContentView: View {
                 }
             }
         }
-
+        
         return sections
     }
     
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var dyn
-
+    
     // Manual refresh UI state
     @State private var isManualRefreshing = false
     
     @State private var showEasterEgg = false
-
+    
     private func triggerEasterEgg() {
         showEasterEgg = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
@@ -258,57 +234,57 @@ struct ContentView: View {
         }
     }
     // MARK: - Refresh gating (Option A)
- 
+    
     private let refreshMinInterval: TimeInterval = 12 * 60   // 12 minutes
-
+    
     private func shouldRefreshNow(last: Date?) -> Bool {
         guard let last else { return true }
         return Date().timeIntervalSince(last) > refreshMinInterval
     }
-
-
+    
+    
     private func recordRefresh(coord: CLLocationCoordinate2D?) {
         lastCurrentRefreshAt = Date()
         lastRefreshCoord = coord
-        if source == .noaa { lastForecastRefreshAt = Date() }
+        lastForecastRefreshAt = Date()
     }
     
-
+    
     // Sheets
     @State private var showingSettings = false
     @State private var showingLocations = false
     @State private var locationTapPulse = false
-
+    
     // When picking a favorite we force NOAA, but we remember what user had selected
     @State private var previousSourceRaw: String? = nil
-
+    
     private enum LaunchLocationMode: String {
         case currentLocation
         case selectedFavorite
     }
-
+    
     @AppStorage("launchLocationMode")
     private var launchLocationModeRaw: String = LaunchLocationMode.currentLocation.rawValue
-
+    
     // New key (doesn’t need to exist elsewhere; AppStorage will create it)
     @AppStorage("launchFavoriteID")
     private var launchFavoriteID: String = ""
-
+    
     private var launchLocationMode: LaunchLocationMode {
         LaunchLocationMode(rawValue: launchLocationModeRaw) ?? .currentLocation
     }
-
+    
     @MainActor
     private func applyLaunchSelectionIfNeeded() {
         guard launchLocationMode == .selectedFavorite else { return }
-
+        
         // Try to restore the persisted favorite
         if !launchFavoriteID.isEmpty,
            let match = favorites.favorites.first(where: { $0.id.uuidString == launchFavoriteID }) {
             selection.selectedFavorite = match
             return
         }
-
+        
         // Fallback: first favorite (and persist it so we stop “floating”)
         if let first = favorites.favorites.first {
             selection.selectedFavorite = first
@@ -319,44 +295,42 @@ struct ContentView: View {
     
     @AppStorage("currentConditionsSource")
     private var sourceRaw: String = CurrentConditionsSource.noaa.rawValue
-    @AppStorage("pwsStationID") private var pwsStationID: String = ""
-
+    
     private var source: CurrentConditionsSource {
         get { CurrentConditionsSource(rawValue: sourceRaw) ?? .noaa }
         set { sourceRaw = newValue.rawValue }
     }
-
+    
     private var isA11y: Bool { dyn.isAccessibilitySize }
-
+    
     // Heights adapt automatically (about ~20% shorter than your older tiles)
     private var miniMinHeight: CGFloat { isA11y ? 84 : 68 }
     private var bigMinHeight: CGFloat { isA11y ? 190 : 150 }
-
+    
     // Font tuning
     private var miniValueFont: Font { isA11y ? .title3.weight(.semibold) : .headline }
     private var miniIconFont: Font { isA11y ? .title3 : .headline }
-
+    
     private var tempFontSize: CGFloat { isA11y ? 54 : 48 }
     private var tempIconFont: Font { isA11y ? .title2 : .title3 }
-
+    
     private var tileBackground: some ShapeStyle {
         YAWATheme.card
     }
-
+    
     private var headerLocationText: String {
-        if source == .pws { return "" } // don’t show stale NOAA location in PWS mode
         return selection.selectedFavorite?.displayName ?? (locationManager.locationName ?? "Current Location")
     }
-
+    
     private var showCurrentLocationGlyph: Bool {
-        (source == .noaa) && (selection.selectedFavorite == nil)
+        selection.selectedFavorite == nil
     }
-
+    
     private func isStale(_ date: Date?, maxAge: TimeInterval) -> Bool {
         guard let date else { return true }
         return Date().timeIntervalSince(date) > maxAge
     }
-
+    
     private func movedEnough(from old: CLLocationCoordinate2D?, to new: CLLocationCoordinate2D?) -> Bool {
         guard let old, let new else { return false }
         let a = CLLocation(latitude: old.latitude, longitude: old.longitude)
@@ -364,135 +338,29 @@ struct ContentView: View {
         return a.distance(from: b) >= refreshDistanceMeters
     }
     
-    private func maybeRefreshOnActive() async {
-        // Favorites: always refresh immediately on active (they're pinned, not GPS dependent)
-        if let _ = selection.selectedFavorite {
-            viewModel.setLoadingPlaceholders()
-            forecastVM.setLoadingPlaceholders()
-            await Task.yield()
-            await refreshNow()
-            await refreshForecastNow()
-            lastCurrentRefreshAt = Date()
-            lastForecastRefreshAt = Date()
-            return
-        }
-
-        // Current location mode: ask for a fresh location fix first
-        locationManager.request()
-
-        let shouldByAge = isStale(lastCurrentRefreshAt, maxAge: refreshMaxAge)
-        let shouldByMove = movedEnough(from: lastRefreshCoord, to: locationManager.coordinate)
-
-        guard shouldByAge || shouldByMove else { return }
-
-        viewModel.setLoadingPlaceholders()
-        if source == .noaa { forecastVM.setLoadingPlaceholders() }
-        await Task.yield()
-
-        await refreshNow()
-        if source == .noaa { await refreshForecastNow() }
-
-        lastCurrentRefreshAt = Date()
-        lastForecastRefreshAt = Date()
-        lastRefreshCoord = locationManager.coordinate
-    }
+    
     
     
     var body: some View {
         rootView
     }
-
-    // MARK: - should use WAPI
-
-    private var isInternationalFavorite: Bool {
-        guard selection.selectedFavorite != nil else { return false }
-        if let code = selectedFavoriteCountryCode {
-            return code.uppercased() != "US"
-        }
-        return false
-    }
-
-    private var shouldUseWeatherApiForCurrent: Bool {
-        // If user explicitly chose PWS mode, use WeatherAPI.
-        if source == .pws { return true }
-
-        // If user selected a non‑US favorite, fall back to WeatherAPI for current.
-        if isInternationalFavorite { return true }
-
-        return false
-    }
     
-
-    // MARK: - Current tile display (NOAA vs WeatherAPI)
-
-    private var weatherApiTempText: String {
-        guard let c = weatherApiCurrentVM.current else { return "—" }
-
-        let useCelsius =
-            selection.selectedFavorite != nil &&
-            selectedFavoriteCountryCode?.uppercased() != "US"
-
-        if useCelsius {
-            return "\(Int(c.temp_c.rounded()))°C"
-        } else {
-            return "\(Int(c.temp_f.rounded()))°"
-        }
-    }
-
-    private var weatherApiHumidityText: String {
-        guard let c = weatherApiCurrentVM.current else { return "—" }
-        guard let h = c.humidity else { return "—" }
-        return "\(h)%"
-    }
-
-    private var weatherApiPressureText: String {
-        guard let c = weatherApiCurrentVM.current else { return "—" }
-        guard let p = c.pressure_in else { return "—" }
-        return String(format: "%.2f", p)
-    }
-
-    private var weatherApiPrecipText: String {
-        guard let c = weatherApiCurrentVM.current else { return "—" }
-        guard let p = c.precip_in else { return "—" }
-        return String(format: "%.2f in", p)
-    }
-
-    private var weatherApiConditionsText: String {
-        guard let c = weatherApiCurrentVM.current else { return "—" }
-        return c.condition.text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var weatherApiWindDisplayText: String {
-        guard let c = weatherApiCurrentVM.current else { return "—" }
-
-        let useMetric =
-            selection.selectedFavorite != nil &&
-            selectedFavoriteCountryCode?.uppercased() != "US"
-
-        let mph = c.wind_mph ?? 0
-        let speedValue = useMetric ? (mph * 1.60934) : mph
-        let w = Int(speedValue.rounded())
-
-        if w == 0 { return "CALM" }
-
-        let dir = (c.wind_dir ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let dirPart = dir.isEmpty ? "" : "\(dir) "
-
-        let unit = useMetric ? "km/h" : "mph"
-        return "\(dirPart)\(w) \(unit)"
-    }
-
+    // MARK: - should use WAPI
+    
+    
+    
+    
     
     // MARK: - Root view (extracted to help the compiler)
-
+    
     private var rootView: some View {
         ZStack {
             YAWATheme.sky.ignoresSafeArea()
-
+            
             VStack(spacing: 18) {
                 headerSection
                     .padding(.top, 8)
-
+                
                 ScrollView {
                     forecastSection
                         .padding(.bottom, 16)
@@ -501,12 +369,12 @@ struct ContentView: View {
                 .refreshable {
                     isManualRefreshing = true
                     defer { isManualRefreshing = false }
-
-                    await refreshNow()
-                    if source == .noaa, !isInternationalFavorite { await refreshForecastNow() }
+                    
+                    await refreshCurrentIfNeeded()
+                    await refreshForecastNow()
                     successHaptic()
                 }
-
+                
                 if showEasterEgg {
                     easterEggOverlay
                 }
@@ -529,7 +397,7 @@ struct ContentView: View {
             } else {
                 launchFavoriteID = ""
             }
-
+            
             Task { await onFavoriteChanged() }
         }
         .onChange(of: sourceRaw) { _, newValue in Task { await onSourceChanged(newValue) } }
@@ -566,18 +434,17 @@ struct ContentView: View {
             allAlertsSheet
         }
     }
-
+    
     // MARK: - Swipeable forecast details (paged)
-
+    
     private func forecastPagerSheet(_ pager: ForecastPagerPayload) -> some View {
         ForecastPagerSheet(
             pager: pager,
-            useCelsius: isInternationalFavorite,
             source: source,
             noaaHourlyVM: noaaHourlyVM,
             selection: selection,
             locationManager: locationManager,
-            forecastDetailCard: { title, day, night, hiF, loF, hourly, useCelsius, isNOAA in
+            forecastDetailCard: { title, day, night, hiF, loF, hourly, isNOAA in
                 AnyView(
                     forecastDetailCard(
                         title: title,
@@ -586,7 +453,6 @@ struct ContentView: View {
                         hiF: hiF,
                         loF: loF,
                         hourly: hourly,
-                        useCelsius: useCelsius,
                         isNOAA: isNOAA
                     )
                 )
@@ -597,16 +463,15 @@ struct ContentView: View {
         .presentationDetents([.fraction(0.72), .large])
         .presentationDragIndicator(.visible)
     }
-
+    
     private struct ForecastPagerSheet: View {
         let pager: ForecastPagerPayload
-        let useCelsius: Bool
         let source: CurrentConditionsSource
-
+        
         @ObservedObject var noaaHourlyVM: NOAAHourlyForecastViewModel
         let selection: LocationSelectionStore
         let locationManager: LocationManager
-
+        
         let forecastDetailCard: (
             _ title: String,
             _ day: String,
@@ -614,15 +479,13 @@ struct ContentView: View {
             _ hiF: Int?,
             _ loF: Int?,
             _ hourly: [(date: Date, tempF: Double)],
-            _ useCelsius: Bool,
             _ isNOAA: Bool
         ) -> AnyView
-
+        
         @State private var pageID: String
-
+        
         init(
             pager: ForecastPagerPayload,
-            useCelsius: Bool,
             source: CurrentConditionsSource,
             noaaHourlyVM: NOAAHourlyForecastViewModel,
             selection: LocationSelectionStore,
@@ -634,12 +497,10 @@ struct ContentView: View {
                 _ hiF: Int?,
                 _ loF: Int?,
                 _ hourly: [(date: Date, tempF: Double)],
-                _ useCelsius: Bool,
                 _ isNOAA: Bool
             ) -> AnyView
         ) {
             self.pager = pager
-            self.useCelsius = useCelsius
             self.source = source
             self.noaaHourlyVM = noaaHourlyVM
             self.selection = selection
@@ -647,32 +508,32 @@ struct ContentView: View {
             self.forecastDetailCard = forecastDetailCard
             _pageID = State(initialValue: pager.initialPageID)
         }
-
+        
         var body: some View {
             ZStack {
                 YAWATheme.card2.ignoresSafeArea()
-
+                
                 VStack(spacing: 0) {
                     TabView(selection: $pageID) {
                         ForEach(pager.pages) { p in
                             ScrollView {
                                 let safeDay = (p.day ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                                 let safeNight = (p.night ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-
+                                
                                 let coord: CLLocationCoordinate2D? =
-                                    selection.selectedFavorite?.coordinate ?? locationManager.coordinate
-
+                                selection.selectedFavorite?.coordinate ?? locationManager.coordinate
+                                
                                 let resolvedHourly: [(date: Date, tempF: Double)] =
-                                    !p.hourly.isEmpty
-                                        ? p.hourly
-                                        : (coord != nil && p.dayDate != nil
-                                            ? noaaHourlyVM.hourlyTuples(for: coord!, day: p.dayDate!)
-                                            : [])
-
+                                !p.hourly.isEmpty
+                                ? p.hourly
+                                : (coord != nil && p.dayDate != nil
+                                   ? noaaHourlyVM.hourlyTuples(for: coord!, day: p.dayDate!)
+                                   : [])
+                                
                                 // Only trust hi/lo when WeatherAPI-driven (NOAA pages have dayDate)
                                 let trustedHiF: Int? = (p.dayDate == nil) ? p.hiF : nil
                                 let trustedLoF: Int? = (p.dayDate == nil) ? p.loF : nil
-
+                                
                                 forecastDetailCard(
                                     p.title,
                                     safeDay,
@@ -680,19 +541,18 @@ struct ContentView: View {
                                     trustedHiF,
                                     trustedLoF,
                                     resolvedHourly,
-                                    useCelsius,
                                     p.dayDate != nil
                                 )
                                 .padding(16)
                                 .task(id: p.dayDate) {
                                     // Load NOAA hourly on demand per page
-                                    guard source == .noaa else { return }
+                                    
                                     guard p.hourly.isEmpty else { return }
                                     guard let dayDate = p.dayDate else { return }
-
+                                    
                                     let coord: CLLocationCoordinate2D? = selection.selectedFavorite?.coordinate ?? locationManager.coordinate
                                     guard let coord else { return }
-
+                                    
                                     await noaaHourlyVM.loadIfNeeded(for: coord, day: dayDate)
                                 }
                             }
@@ -707,16 +567,16 @@ struct ContentView: View {
             }
         }
     }
-        
-
-
+    
+    
+    
     private var mainStack: some View {
         VStack(spacing: 18) {
             headerSection
                 .padding(.top, 8)
-
+            
             forecastSection
-
+            
             if showEasterEgg {
                 easterEggOverlay
             }
@@ -727,36 +587,18 @@ struct ContentView: View {
     }
     
     private var forecastSection: some View {
-        Group {
-            let isInternationalFavorite: Bool = {
-                guard selection.selectedFavorite != nil else { return false }
-                if let code = selectedFavoriteCountryCode {
-                    return code.uppercased() != "US"
-                }
-                return false
-            }()
-
-            if source == .noaa {
-                if isInternationalFavorite {
-                    weatherApiForecastCard
-                } else {
-                    inlineForecastSection
-                }
-            } else {
-                weatherApiForecastCard
-            }
-        }
-        .padding(.top, 6)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity)
+        inlineForecastSection
+            .padding(.top, 6)
+            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity)
     }
     
     
-
+    
     private var easterEggOverlay: some View {
         VStack {
             Spacer().frame(height: 10)
-
+            
             Text("Yawa ✨ Yet Another Weather App")
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 12)
@@ -764,43 +606,41 @@ struct ContentView: View {
                 .background(.thinMaterial)
                 .clipShape(Capsule())
                 .transition(.move(edge: .top).combined(with: .opacity))
-
+            
             Spacer()
         }
         .animation(.easeInOut(duration: 0.2), value: showEasterEgg)
         .zIndex(10)
     }
-
+    
     private var topBarToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
             ToolbarIconButton("gearshape.fill", tint: .white) { showingSettings = true }
         }
     }
-
+    
     // MARK: - Extracted side-effect handlers (compiler-friendly)
-
+    
     @MainActor
     private func onFirstAppearTask() async {
-        print("[REFRESH] onfirstappeartask")
         // SwiftUI can call `.task {}` more than once due to view reconstruction.
         // Make the launch refresh idempotent.
         guard !didRunInitialRefresh else { return }
         didRunInitialRefresh = true
-
+        
         await NotificationService.shared.requestAuthorizationIfNeeded()
-
+        
         // Avoid a redundant coordinate-triggered refresh during initial launch.
         pendingForegroundRefresh = false
-
+        
         // Apply the launch setting BEFORE the first refresh.
         switch launchLocationMode {
         case .currentLocation:
             // GPS mode: always start from GPS
             selection.selectedFavorite = nil
-            selectedFavoriteCountryCode = nil
             // Request location; we'll suppress the initial coordinate publish from triggering a second refresh.
             locationManager.request()
-
+            
         case .selectedFavorite:
             // Favorite mode: restore last selected favorite (or fall back to first favorite).
             if selection.selectedFavorite == nil {
@@ -812,206 +652,122 @@ struct ContentView: View {
                     launchFavoriteID = first.id.uuidString
                 }
             }
-
-            if let fav = selection.selectedFavorite {
-                // Needed for international logic / WeatherAPI fallback decisions.
-                selectedFavoriteCountryCode = await locationManager.countryCode(for: fav.coordinate)
-            } else {
-                // No favorite to restore → fall back to GPS.
-                selectedFavoriteCountryCode = nil
-                // Request location; we'll suppress the initial coordinate publish from triggering a second refresh.
+            
+            if selection.selectedFavorite == nil {
+                // No favorite selected → use GPS
                 locationManager.request()
             }
         }
-
+        
         // Show placeholders quickly so the UI doesn't flash stale values.
         viewModel.setLoadingPlaceholders()
-        if source == .noaa { forecastVM.setLoadingPlaceholders() }
+        forecastVM.setLoadingPlaceholders()
         await Task.yield()
-
+        
         // Refresh current + forecast
-        await refreshNow()
-        if source == .noaa, !isInternationalFavorite {
-            await refreshForecastNow()
-        }
-
+        await refreshCurrentIfNeeded()
+        
+        await refreshForecastNow()
+        
         // Record the coordinate we actually refreshed for
         let refreshedCoord: CLLocationCoordinate2D? =
-            selection.selectedFavorite?.coordinate ?? locationManager.coordinate
+        selection.selectedFavorite?.coordinate ?? locationManager.coordinate
         recordRefresh(coord: refreshedCoord)
-
+        
         // Allow coordinate-driven refreshes after the initial launch refresh completes.
         suppressCoordinateRefresh = false
     }
-
+    
     private func onCoordinateChange(_ coord: CLLocationCoordinate2D?) {
         print("[REFRESH] oncoordinateChange")
         guard let coord else { return }
         guard selection.selectedFavorite == nil else { return }
-        guard source != .pws else { return }
-
+        
         let needs = pendingForegroundRefresh
         || shouldRefreshNow(last: lastCurrentRefreshAt)
         || movedEnough(from: lastRefreshCoord, to: coord)
-
+        
         guard needs else { return }
-
+        
         Task {
             pendingForegroundRefresh = false
-
+            
             viewModel.setLoadingPlaceholders()
-            if source == .noaa { forecastVM.setLoadingPlaceholders() }
+            forecastVM.setLoadingPlaceholders()
             await Task.yield()
-
-            await refreshNow()
-            if source == .noaa, !isInternationalFavorite { await refreshForecastNow() }
-
+            
+            await refreshCurrentIfNeeded()
+            await refreshForecastNow()
+            
             recordRefresh(coord: coord)
         }
     }
-
+    
     private func onScenePhaseChange(_ phase: ScenePhase) {
         print("[REFRESH] onscenephasechange")
         guard phase == .active else { return }
         guard selection.selectedFavorite == nil else { return }
-
+        
         pendingForegroundRefresh = true
         // Foreground resumes should allow coordinate-triggered refreshes.
         suppressCoordinateRefresh = false
         locationManager.refresh()
     }
-
+    
     @MainActor
     private func onFavoriteChanged() async {
+        // Clear out stale UI immediately
         viewModel.setLoadingPlaceholders()
         forecastVM.setLoadingPlaceholders()
         await Task.yield()
-
-        // Update country code for the selected favorite (nil when returning to GPS)
-        if let fav = selection.selectedFavorite {
-            selectedFavoriteCountryCode = await locationManager.countryCode(for: fav.coordinate)
-        } else {
-            selectedFavoriteCountryCode = nil
-        }
-
-        // Tiles/current conditions
+        
+        // Refresh tiles / current conditions
         await refreshCurrentIfNeeded()
-
-        // 7-day forecast card
-        let isInternationalFavorite =
-            selection.selectedFavorite != nil &&
-            (selectedFavoriteCountryCode?.uppercased() != "US")
-
-        if source == .pws || isInternationalFavorite {
-            if let coord = effectiveWeatherApiCoordinate {
-                await weatherApiForecastViewModel.refresh(for: coord)   // ✅ this is what you were missing
-            }
-        } else {
-            await refreshForecastNow() // NOAA-only
-        }
-    }
-    
-    
-    
-
-    @MainActor
-    private func onSourceChanged(_ newValue: String) async {
-        if newValue == CurrentConditionsSource.pws.rawValue {
-            selection.selectedFavorite = nil
-            previousSourceRaw = nil
-        }
-
-        viewModel.setLoadingPlaceholders()
-        if source == .noaa { forecastVM.setLoadingPlaceholders() }
-        await Task.yield()
-
-        await refreshNow()
+        
+        // Refresh NOAA 7-day forecast
         await refreshForecastNow()
     }
-
+    
+    
+    
+    @MainActor
+    private func onSourceChanged(_ newValue: String) async {
+        
+        viewModel.setLoadingPlaceholders()
+        forecastVM.setLoadingPlaceholders()
+        await Task.yield()
+        
+        await refreshCurrentIfNeeded()
+        await refreshForecastNow()
+    }
+    
     // MARK: - Extracted sheets
-
-    private func weatherAPIHourlyTuplesForDayIndex(_ index: Int) -> [(date: Date, tempF: Double)] {
-        let all = weatherApiForecastViewModel.primaryHourlyPoints
-            .map { (date: $0.date, tempF: $0.tempF) }
-
-        guard !all.isEmpty else { return [] }
-
-        let cal = Calendar.current
-        let grouped = Dictionary(grouping: all) { cal.startOfDay(for: $0.date) }
-        let keys = grouped.keys.sorted()
-
-        // ✅ IMPORTANT: do NOT fall back to "all" (that makes every day look identical)
-        guard index >= 0, index < keys.count else { return [] }
-
-        let dayKey = keys[index]
-        return (grouped[dayKey] ?? []).sorted { $0.date < $1.date }
-    }
-
-    private func weatherAPIHourlyTuples(forDateText dateText: String, fallbackIndex: Int) -> [(date: Date, tempF: Double)] {
-        let all = weatherApiForecastViewModel.primaryHourlyPoints
-            .map { (date: $0.date, tempF: $0.tempF) }
-
-        guard !all.isEmpty else { return [] }
-
-        // dateText is like "1/23"
-        let parts = dateText.split(separator: "/")
-        guard parts.count == 2,
-              let m = Int(parts[0]),
-              let d = Int(parts[1])
-        else {
-            return weatherAPIHourlyTuplesForDayIndex(fallbackIndex)
-        }
-
-        let cal = Calendar.current
-        let now = Date()
-        let currentYear = cal.component(.year, from: now)
-        let currentMonth = cal.component(.month, from: now)
-
-        // handle year rollover (Dec -> Jan forecasts, etc.)
-        var year = currentYear
-        if m < currentMonth - 6 { year += 1 }
-        if m > currentMonth + 6 { year -= 1 }
-
-        var comps = DateComponents()
-        comps.year = year
-        comps.month = m
-        comps.day = d
-        comps.timeZone = TimeZone.current
-
-        guard let dayDate = cal.date(from: comps) else {
-            return weatherAPIHourlyTuplesForDayIndex(fallbackIndex)
-        }
-
-        let key = cal.startOfDay(for: dayDate)
-
-        let grouped = Dictionary(grouping: all) { cal.startOfDay(for: $0.date) }
-        return (grouped[key] ?? []).sorted { $0.date < $1.date }
-    }
+    
+    
     
     
     private func splitDayNight(_ text: String) -> (day: String, night: String?) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-
+        
         // Look for the exact marker produced by our NOAA/WeatherAPI detail formatting.
         if let r = t.range(of: "\n\nNight...\n") {
             let dayPart = String(t[..<r.lowerBound])
                 .replacingOccurrences(of: "Day...\n", with: "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-
+            
             let nightPart = String(t[r.upperBound...])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-
+            
             return (day: dayPart.isEmpty ? t : dayPart, night: nightPart.isEmpty ? nil : nightPart)
         }
-
+        
         // Day-only; strip the Day label if present.
         let dayOnly = t.replacingOccurrences(of: "Day...\n", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-
+        
         return (day: dayOnly.isEmpty ? t : dayOnly, night: nil)
     }
-
+    
     private func forecastDetailCard(
         title: String,
         day: String,
@@ -1019,32 +775,31 @@ struct ContentView: View {
         hiF: Int?,
         loF: Int?,
         hourly: [(date: Date, tempF: Double)],
-        useCelsius: Bool = false,
         isNOAA: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-
+            
             // Header row (matches Daily Forecast card vibe)
             HStack(spacing: 8) {
                 Image(systemName: "calendar")
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(YAWATheme.textSecondary)
-
+                
                 Text("Forecast Details")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(YAWATheme.textPrimary)
-
+                
                 Spacer()
-
+                
                 Text(title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(YAWATheme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-
+            
             Divider().opacity(0.35)
-
+            
             // Day sub-card
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
@@ -1055,19 +810,19 @@ struct ContentView: View {
                         .font(.headline)
                         .foregroundStyle(YAWATheme.textPrimary)
                 }
-
+                
                 Text(day)
                     .font(.callout)
                     .foregroundStyle(YAWATheme.textPrimary)
                     .lineSpacing(6)
                     .multilineTextAlignment(.leading)
-  //                  .textSelection(.enabled)
+                //                  .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(12)
             .background(YAWATheme.card)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
+            
             // Night sub-card (optional)
             if let night, !night.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1075,25 +830,25 @@ struct ContentView: View {
                         Image(systemName: "moon.stars.fill")
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(YAWATheme.textSecondary)
-
+                        
                         Text("Night")
                             .font(.headline)
                             .foregroundStyle(YAWATheme.textPrimary)
                     }
-
+                    
                     Text(night)
                         .font(.callout)
                         .foregroundStyle(YAWATheme.textPrimary)
                         .lineSpacing(6)
                         .multilineTextAlignment(.leading)
- //                       .textSelection(.enabled)
+                    //                       .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(12)
                 .background(YAWATheme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-
+            
             // Hourly sub-card (optional)
             if hourly.count >= 2 {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1101,36 +856,34 @@ struct ContentView: View {
                         Image(systemName: "clock.fill")
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(YAWATheme.textSecondary)
-
+                        
                         Text("Hourly Temps")
                             .font(.headline)
                             .foregroundStyle(YAWATheme.textPrimary)
-
+                        
                         Spacer()
                     }
-
-                    // Display hourly temps in °C for international favorites, otherwise °F.
-                    let hourlyTemps: [Double] = hourly.map { p in
-                        useCelsius ? (p.tempF - 32.0) * 5.0 / 9.0 : p.tempF
-                    }
-
+                    
+                    // Display hourly temps in °F (NOAA only)
+                    let hourlyTemps: [Double] = hourly.map { $0.tempF }
+                    
                     let minT = hourlyTemps.min() ?? 0
                     let maxT = hourlyTemps.max() ?? 0
-
+                    
                     // Round to nice bounds so axis ticks land on clean values.
-                    let step: Double = useCelsius ? 5.0 : 10.0
+                    let step: Double = 10.0
                     let yMin = floor(minT / step) * step
                     let yMax = ceil(maxT / step) * step
-
-                    let unitLabel = useCelsius ? "Temp (°C)" : "Temp (°F)"
-
+                    
+                    let unitLabel = "Temp (°F)"
+                    
                     // Zip dates with converted temps so we chart the right numbers
                     let series = Array(zip(hourly, hourlyTemps))
-
+                    
                     Chart(series, id: \.0.date) { pair in
                         let p = pair.0
                         let t = pair.1
-
+                        
                         LineMark(
                             x: .value("Time", p.date),
                             y: .value(unitLabel, t)
@@ -1143,7 +896,7 @@ struct ContentView: View {
                         AxisMarks(values: .stride(by: .hour, count: 3)) { value in
                             AxisGridLine().foregroundStyle(YAWATheme.textSecondary.opacity(0.15))
                             AxisTick().foregroundStyle(YAWATheme.textSecondary.opacity(0.35))
-
+                            
                             AxisValueLabel {
                                 if let d = value.as(Date.self) {
                                     let hour = Calendar.current.component(.hour, from: d)
@@ -1186,17 +939,18 @@ struct ContentView: View {
     
     private func parseNWSDate(_ s: String?) -> Date? {
         guard let s, !s.isEmpty else { return nil }
-
+        
         // NWS timestamps are RFC3339 / ISO8601, sometimes with fractional seconds.
         let f1 = ISO8601DateFormatter()
         f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let d = f1.date(from: s) { return d }
-
+        
         let f2 = ISO8601DateFormatter()
         f2.formatOptions = [.withInternetDateTime]
         return f2.date(from: s)
+        
     }
-
+    
     private func alertIssuedDateText(_ d: Date) -> String {
         let df = DateFormatter()
         df.locale = .current
@@ -1212,7 +966,7 @@ struct ContentView: View {
         default: return "info.circle.fill"
         }
     }
-
+    
     private func alertColor(for severity: String?) -> Color {
         switch severity?.lowercased() {
         case "extreme", "severe":
@@ -1223,13 +977,13 @@ struct ContentView: View {
             return Color.blue.opacity(0.9)
         }
     }
-
+    
     private func alertDetailSheet(_ detail: DetailPayload) -> some View {
         ZStack {
             // Match the slightly lighter sheet background used elsewhere
             YAWATheme.card2
                 .ignoresSafeArea()
-
+            
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     switch detail.body {
@@ -1243,30 +997,30 @@ struct ContentView: View {
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-
+                        
                     case .forecast(let day, let night, let dayDate, let hiF, let loF, let hourly):
                         let safeDay = (day ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                         let safeNight = (night ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-
+                        
                         // If the payload already includes hourly tuples (WeatherAPI), use them.
                         // Otherwise (NOAA), pull cached tuples for the selected day.
                         let coord: CLLocationCoordinate2D? =
-                            selection.selectedFavorite?.coordinate ?? locationManager.coordinate
-
-                        let resolvedHourly: [(date: Date, tempF: Double)] =
-                            !hourly.isEmpty
-                                ? hourly
-                                : (coord != nil && dayDate != nil
-                                    ? noaaHourlyVM.hourlyTuples(for: coord!, day: dayDate!)
-                                    : [])
+                        selection.selectedFavorite?.coordinate ?? locationManager.coordinate
                         
-                        let useCelsius = isInternationalFavorite
-
+                        let resolvedHourly: [(date: Date, tempF: Double)] =
+                        !hourly.isEmpty
+                        ? hourly
+                        : (coord != nil && dayDate != nil
+                           ? noaaHourlyVM.hourlyTuples(for: coord!, day: dayDate!)
+                           : [])
+                        
+                        
+                        
                         // Safety: only trust provided hi/lo when this is a WeatherAPI-driven detail payload.
                         // NOAA detail payloads have a dayDate; WeatherAPI ones do not.
                         let trustedHiF: Int? = (dayDate == nil) ? hiF : nil
                         let trustedLoF: Int? = (dayDate == nil) ? loF : nil
-
+                        
                         forecastDetailCard(
                             title: detail.title,
                             day: safeDay,
@@ -1274,16 +1028,14 @@ struct ContentView: View {
                             hiF: trustedHiF,
                             loF: trustedLoF,
                             hourly: resolvedHourly,
-                            useCelsius: useCelsius,
                             isNOAA: dayDate != nil
                         )
                         
                         .task(id: dayDate) {
                             // Kick off NOAA hourly loading on-demand for the tapped day.
-                            guard source == .noaa else { return }
                             guard hourly.isEmpty else { return } // already have hourly
                             guard let dayDate else { return }
-
+                            
                             let coord: CLLocationCoordinate2D?
                             if let fav = selection.selectedFavorite {
                                 coord = fav.coordinate
@@ -1291,14 +1043,14 @@ struct ContentView: View {
                                 coord = locationManager.coordinate
                             }
                             guard let coord else { return }
-
+                            
                             await noaaHourlyVM.loadIfNeeded(for: coord, day: dayDate)
                         }
-
+                        
                     case .alert(let description, let instructions, let severity, let issuedAt):
                         let sym = alertSymbol(for: severity)
                         let sevColor = alertColor(for: severity)
-
+                        
                         VStack(alignment: .leading, spacing: 12) {
                             // Header row (matches Forecast Details header placement)
                             HStack(spacing: 8) {
@@ -1307,14 +1059,14 @@ struct ContentView: View {
                                     .foregroundStyle(.white, sevColor)
                                     .font(.system(size: 18, weight: .semibold))
                                     .frame(width: 22, height: 22, alignment: .center)
-
+                                
                                 Text(detail.title) // e.g. “Winter Storm Warning”
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(YAWATheme.textPrimary)
                                     .lineLimit(2)
-
+                                
                                 Spacer(minLength: 0)
-
+                                
                                 if let issuedAt {
                                     Text(alertIssuedDateText(issuedAt)) // e.g. “Jan 24”
                                         .font(.caption.weight(.semibold))
@@ -1322,14 +1074,14 @@ struct ContentView: View {
                                         .lineLimit(1)
                                 }
                             }
-
+                            
                             Divider().opacity(0.35)
-
+                            
                             // Body is a sub-card so the header sits on the darker sheet background
                             VStack(alignment: .leading, spacing: 12) {
                                 if let description, !description.isEmpty {
                                     let sections = parseAlertNarrativeSections(from: description)
-
+                                    
                                     VStack(alignment: .leading, spacing: 12) {
                                         ForEach(sections) { s in
                                             VStack(alignment: .leading, spacing: 4) {
@@ -1340,7 +1092,7 @@ struct ContentView: View {
                                                         .padding(.top, 6)
                                                         .padding(.bottom, 6)
                                                 }
-
+                                                
                                                 Text(s.body)
                                                     .font(.callout)
                                                     .foregroundStyle(YAWATheme.textPrimary)
@@ -1352,26 +1104,26 @@ struct ContentView: View {
                                         }
                                     }
                                 }
-
+                                
                                 if !instructions.isEmpty {
                                     if description != nil {
                                         Divider().opacity(0.25)
                                     }
-
+                                    
                                     Text("What to do")
                                         .font(.headline)
                                         .foregroundStyle(YAWATheme.textPrimary)
-
+                                    
                                     VStack(alignment: .leading, spacing: 10) {
                                         ForEach(instructions, id: \.self) { item in
                                             let cleaned = stripLeadingBullet(item)
-
+                                            
                                             HStack(alignment: .top, spacing: 10) {
                                                 Text("•")
                                                     .font(.callout.weight(.semibold))
                                                     .foregroundStyle(YAWATheme.textPrimary)
                                                     .padding(.top, 1)
-
+                                                
                                                 Text(cleaned)
                                                     .font(.callout)
                                                     .foregroundStyle(YAWATheme.textPrimary)
@@ -1383,10 +1135,10 @@ struct ContentView: View {
                                         }
                                     }
                                 }
-
+                                
                                 if let severity, !severity.isEmpty {
                                     Divider().padding(.top, 6)
-
+                                    
                                     Text("Severity: \(severity)")
                                         .font(.footnote)
                                         .foregroundStyle(YAWATheme.textSecondary)
@@ -1410,7 +1162,7 @@ struct ContentView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
-
+    
     private var allAlertsSheet: some View {
         NavigationStack {
             List {
@@ -1444,7 +1196,7 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
     }
     // MARK: - Sections
-
+    
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 10) {
 
@@ -1472,52 +1224,34 @@ struct ContentView: View {
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        if source == .pws {
-                            let label = viewModel.pwsLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let sid = pwsStationID.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let display = !label.isEmpty ? label : (!sid.isEmpty ? sid : "Personal Weather Station")
-                            Text(display)
-                                .font(.subheadline)
-                                .foregroundStyle(YAWATheme.textSecondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: 200, alignment: .trailing)
-                        } else {
-                            let loc = headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines)
-                            Text(loc.isEmpty ? "Current Location" : loc)
-                                .font(.subheadline)
-                                .foregroundStyle(YAWATheme.textSecondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: 200, alignment: .trailing)
+                        let loc = headerLocationText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-                            if showCurrentLocationGlyph {
-                                Image(systemName: "location.circle")
-                                    .imageScale(.small)
-                                    .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
-                            }
-                            Image(systemName: "chevron.down")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(YAWATheme.textSecondary.opacity(0.8))
+                        Text(loc.isEmpty ? "Current Location" : loc)
+                            .font(.subheadline)
+                            .foregroundStyle(YAWATheme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 200, alignment: .trailing)
+
+                        if showCurrentLocationGlyph {
+                            Image(systemName: "location.circle")
+                                .imageScale(.small)
+                                .foregroundStyle(YAWATheme.textSecondary.opacity(0.9))
                         }
+
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(YAWATheme.textSecondary.opacity(0.8))
                     }
-                    .scaleEffect(locationTapPulse ? 0.96 : 1.0)
-                    .opacity(locationTapPulse ? 0.85 : 1.0)
                 }
                 .buttonStyle(.plain)
+                .scaleEffect(locationTapPulse ? 0.96 : 1.0)
+                .opacity(locationTapPulse ? 0.85 : 1.0)
                 .layoutPriority(0) // let this truncate first
             }
 
-//            // Row 2: PWS label (optional)
-//            if source == .pws, !viewModel.pwsLabel.isEmpty {
-//                Text("\(viewModel.pwsLabel) • PWS")
-//                    .font(.caption)
-//                    .foregroundStyle(YAWATheme.textTertiary)
-//            }
-
             // Row 3+: pills stack vertically (prevents crowding)
             VStack(alignment: .center, spacing: 8) {
-
                 if !networkMonitor.isOnline {
                     pill("Offline — showing last update", "wifi.slash")
                         .fixedSize(horizontal: false, vertical: true)
@@ -1534,26 +1268,8 @@ struct ContentView: View {
                             isManualRefreshing = true
                             defer { isManualRefreshing = false }
 
-                            // ✅ Always refresh "current" (tiles) using the effective source
                             await refreshCurrentIfNeeded()
-
-                            // ✅ Refresh the forecast card that is actually being displayed
-                            if source == .noaa {
-                                if !isInternationalFavorite {
-                                    await refreshForecastNow()      // NOAA forecast
-                                } else {
-                                    // WeatherAPI forecast refresh happens via its .task(id: weatherApiCoordKey),
-                                    // but if you want a true "force refresh" here, call it explicitly:
-                                    if let coord = effectiveWeatherApiCoordinate {
-                                        await weatherApiForecastViewModel.refresh(for: coord)
-                                    }
-                                }
-                            } else {
-                                // PWS mode forecast (WeatherAPI)
-                                if let coord = effectiveWeatherApiCoordinate {
-                                    await weatherApiForecastViewModel.refresh(for: coord)
-                                }
-                            }
+                            await refreshForecastNow()
 
                             successHaptic()
                         }
@@ -1569,9 +1285,9 @@ struct ContentView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(YAWATheme.textSecondary.opacity(0.8))
-                                .padding(.leading, 8)   // breathing room
+                                .padding(.leading, 8)
                         }
-                        .fixedSize(horizontal: true, vertical: false) // ✅ prevents full-width expansion
+                        .fixedSize(horizontal: true, vertical: false)
                         .font(.caption)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -1592,252 +1308,68 @@ struct ContentView: View {
         .background(YAWATheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
-
+    
     private var tilesSection: some View {
         HStack(spacing: 14) {
-
+            
             // Left column: wind + humidity
             VStack(spacing: 14) {
                 miniTile("wind", .teal, currentWindDisplayText)
                 miniTile("humidity.fill", .blue, currentHumidityText)
             }
             .frame(maxWidth: .infinity)
-
+            
             // Center big tile: temperature
             bigTempTile
-
+            
             // Right column: conditions + pressure
             VStack(spacing: 14) {
-                if source == .noaa {
-                    let hour = Calendar.current.component(.hour, from: Date())
-                    let isNight = hour < 6 || hour >= 18
-                    let sym = conditionsSymbolAndColor(for: currentConditionsText, isNight: isNight)
-                    miniTile(sym.symbol, sym.color, currentConditionsText)
-                } else {
-                    miniTile("cloud.rain", .blue, currentPrecipText)
-                }
+                let hour = Calendar.current.component(.hour, from: Date())
+                let isNight = hour < 6 || hour >= 18
+                let sym = conditionsSymbolAndColor(for: currentConditionsText, isNight: isNight)
+                
+                miniTile(sym.symbol, sym.color, currentConditionsText)
                 miniTile("gauge", .orange, currentPressureText)
             }
             .frame(maxWidth: .infinity)
         }
     }
-
-    // MARK: - WeatherAPI daily forecast card (broken into smaller subviews for compiler)
-
-    private var weatherApiForecastCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            weatherApiForecastHeader
-            weatherApiForecastBody
-            weatherApiForecastFooter
-        }
-        .padding(14)
-        .background(YAWATheme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .task(id: weatherApiCoordKey) {
-            guard let coord = effectiveWeatherApiCoordinate else { return }
-            await weatherApiForecastViewModel.loadIfNeeded(for: coord)
-        }
-    }
-
-    private var weatherApiForecastHeader: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "calendar")
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(YAWATheme.textSecondary)
-
-            Text("7-day Forecast")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(YAWATheme.textPrimary)
-
-            Spacer()
-        }
-    }
-
-    @ViewBuilder
-    private var weatherApiForecastBody: some View {
-        if weatherApiForecastViewModel.isLoading {
-            ProgressView()
-                .frame(maxWidth: .infinity, alignment: .center)
-        } else if let err = weatherApiForecastViewModel.errorMessage {
-            Text(err)
-                .font(.subheadline)
-                .foregroundStyle(YAWATheme.textSecondary)
-        } else if weatherApiForecastViewModel.days.isEmpty {
-            Text("No forecast data.")
-                .font(.subheadline)
-                .foregroundStyle(YAWATheme.textSecondary)
-        } else {
-            VStack(spacing: 10) {
-                weatherApiForecastRows
-            }
-        }
-    }
-
-    private var weatherApiForecastRows: some View {
-        ForEach(Array(weatherApiForecastViewModel.days.enumerated()), id: \.element.id) { index, d in
-            WeatherAPIDayRow(
-                index: index,
-                weekday: d.weekday,
-                dateText: d.dateText,
-                conditionText: d.conditionText,
-                chanceRain: d.chanceRain,
-                hi: isInternationalFavorite ? Int(((Double(d.hiF) - 32.0) * 5.0 / 9.0).rounded()) : d.hiF,
-                lo: isInternationalFavorite ? Int(((Double(d.loF) - 32.0) * 5.0 / 9.0).rounded()) : d.loF,
-                isLast: index == weatherApiForecastViewModel.days.count - 1,
-                sideCol: sideCol,
-                onTap: {
-                    let pages: [ForecastPage] = weatherApiForecastViewModel.days.map { day in
-                        let parts = splitDayNight(day.detailText)
-                        let hourly = weatherApiForecastViewModel.hourlyPoints(for: day.id)
-                            .map { (date: $0.date, tempF: $0.tempF) }
-
-                        return ForecastPage(
-                            id: day.id,
-                            title: "\(day.weekday) \(day.dateText)",
-                            day: parts.day,
-                            night: parts.night,
-                            dayDate: nil,
-                            hiF: day.hiF,
-                            loF: day.loF,
-                            hourly: hourly
-                        )
-                    }
-
-                    forecastPager = ForecastPagerPayload(
-                        pages: pages,
-                        initialPageID: d.id
-                    )
-                }
-            )
-        }
-    }
-
-    private var weatherApiForecastFooter: some View {
-        VStack(spacing: 8) {
-            Divider().opacity(0.25)
-
-            Text("Source: weatherapi.com")
-                .font(.caption)
-                .foregroundStyle(YAWATheme.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 6)
-        }
-    }
-
-    // MARK: - Extracted row view (keeps type-checker happy)
-
-    private struct WeatherAPIDayRow: View {
-        let index: Int
-
-        // Decomposed fields (avoids depending on a nested type name)
-        let weekday: String
-        let dateText: String
-        let conditionText: String
-        let chanceRain: Int?
-        let hi: Int
-        let lo: Int
-
-        let isLast: Bool
-        let sideCol: CGFloat
-        let onTap: () -> Void
-
-        var body: some View {
-            let (sym, color) = conditionsSymbolAndColor(for: conditionText, isNight: false)
-            let popText = chanceRain.map { "\($0)%" }
-
-            VStack(spacing: 0) {
-                HStack(spacing: 10) {
-                    // Left column (fixed)
-                    HStack(spacing: 4) {
-                        Text(weekday)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(YAWATheme.textPrimary)
-
-                        Text(dateText)
-                            .font(.caption)
-                            .foregroundStyle(YAWATheme.textSecondary)
-                    }
-                    .frame(width: sideCol, alignment: .leading)
-
-                    // Middle column (true center)
-                    VStack(spacing: 2) {
-                        Image(systemName: sym)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(color)
-                            .font(.title3)
-
-                        Group {
-                            if let popText {
-                                Text(popText)
-                            } else {
-                                Text("00%").hidden() // keeps identical layout/baseline
-                            }
-                        }
-                        .font(.caption2.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(YAWATheme.textSecondary)
-                    }
-                    .frame(height: 34, alignment: .center)
-                    .frame(maxWidth: .infinity, alignment: .center)
-
-                    // Right column (fixed)
-                    Text("H \(hi)°  L \(lo)°")
-                        .font(.subheadline.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(YAWATheme.textPrimary)
-                        .frame(width: sideCol, alignment: .trailing)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { onTap() }
-
-                if !isLast {
-                    Divider().opacity(0.5)
-                        .padding(.top, 10)
-                }
-            }
-        }
-
-        // NOTE: This relies on the same helper symbol mapping as your main view.
-        // We redeclare it here as a wrapper so the nested struct can call it.
-        private func conditionsSymbolAndColor(for text: String, isNight: Bool) -> (String, Color) {
-            ContentView.conditionsSymbolAndColorStatic(for: text, isNight: isNight)
-        }
-    }
-
-        
-        private var inlineForecastSection: some View {
+    
+    
+    
+    private var inlineForecastSection: some View {
         VStack(alignment: .leading, spacing: 9) { // was 12
-
+            
             // Header row (centered title + spinner on right)
             HStack(spacing: 8) {
                 Image(systemName: "calendar")
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(YAWATheme.textSecondary)
-
+                
                 Text("7-day Forecast")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(YAWATheme.textPrimary)
-
+                
                 Spacer()
-
+                
                 if forecastVM.isLoading && forecastVM.periods.isEmpty {
                     ProgressView().controlSize(.small)
                 }
             }
-
+            
             // Error (only show if not currently loading)
             if let msg = forecastVM.errorMessage, !msg.isEmpty, !forecastVM.isLoading {
                 Text(msg)
                     .font(.subheadline)
                     .foregroundStyle(YAWATheme.textSecondary)
             }
-
+            
             if let first = forecastVM.alerts.first {
                 VStack(alignment: .leading, spacing: 8) {
                     InlineAlertRow(alert: first)
                         .contentShape(Rectangle())
                         .onTapGesture { openAlertDetail(first) }
-
+                    
                     // If there are more, show a tappable "X more…" line that opens list
                     if forecastVM.alerts.count > 1 {
                         Button {
@@ -1854,43 +1386,43 @@ struct ContentView: View {
                 .background(YAWATheme.card2)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-
+            
             // Forecast rows
             if !forecastVM.periods.isEmpty {
                 let forecastDays: [DailyForecast] =
-                    Array(combineDayNight(Array(forecastVM.periods.prefix(14))).prefix(7))
-
+                Array(combineDayNight(Array(forecastVM.periods.prefix(14))).prefix(7))
+                
                 ForEach(forecastDays, id: \.id) { d in
                     let sym = forecastSymbolAndColor(
                         for: d.day.shortForecast,
                         detailedForecast: d.day.detailedForecast,
                         isDaytime: d.day.isDaytime
                     )
-
+                    
                     HStack(spacing: 10) {
-
+                        
                         // Left column (fixed)
                         HStack(spacing: 4) {
                             Text(weekdayLabel(d.startDate))
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(YAWATheme.textPrimary)
-
+                            
                             Text(d.dateText)
                                 .font(.caption) // tighter than .subheadline
                                 .foregroundStyle(YAWATheme.textSecondary)
                         }
                         .frame(width: sideCol, alignment: .leading)
-
+                        
                         // Middle column (true center)
                         let pop = popText(d.day)
-
+                        
                         VStack(spacing: 2) {
                             Image(systemName: sym.symbol)
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(sym.color)
                                 .font(.title3)
                                 .offset(y: iconYOffset(symbol: sym.symbol, hasPop: pop != nil))
-
+                            
                             Group {
                                 if let pop {
                                     Text(pop)
@@ -1904,31 +1436,31 @@ struct ContentView: View {
                         }
                         .frame(height: 34, alignment: .center)          // ✅ locks vertical centering
                         .frame(maxWidth: .infinity, alignment: .center) // keeps true center column
-
+                        
                         // Right column (fixed) — restore NOAA high/low, with Optional-safe display
                         let hiText = tempDisplay(d.day.temperature)
                         let loText = tempDisplay(d.night?.temperature ?? d.day.temperature)
-
+                        
                         Text("H \(hiText)  L \(loText)")
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
                             .foregroundStyle(YAWATheme.textPrimary)
                             .frame(width: sideCol, alignment: .trailing)
                     }
- //                   .padding(.vertical, 6)
+                    //                   .padding(.vertical, 6)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         let pages: [ForecastPage] = forecastDays.map { item in
                             let dayText = (item.day.detailedForecast ?? item.day.shortForecast)
                                 .trimmingCharacters(in: .whitespacesAndNewlines)
-
+                            
                             let nightText = (item.night?.detailedForecast ?? "")
                                 .trimmingCharacters(in: .whitespacesAndNewlines)
                             let normalizedNight = (nightText == dayText) ? "" : nightText
-
+                            
                             let df = ISO8601DateFormatter()
                             let pid = df.string(from: item.startDate)
-
+                            
                             return ForecastPage(
                                 id: pid,
                                 title: "\(abbreviatedDayName(item.name)) \(item.dateText)",
@@ -1940,21 +1472,21 @@ struct ContentView: View {
                                 hourly: []
                             )
                         }
-
+                        
                         let df = ISO8601DateFormatter()
                         let initialID = df.string(from: d.startDate)
-
+                        
                         forecastPager = ForecastPagerPayload(
                             pages: pages,
                             initialPageID: initialID
                         )
                     }
-
+                    
                     // If you want dividers between rows, add them here:
                     if d.id != forecastDays.last?.id {
                         Divider()
                             .opacity(0.5)
-                        }
+                    }
                 }
             }
             Divider().opacity(0.25)
@@ -1968,13 +1500,13 @@ struct ContentView: View {
         .background(YAWATheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
-
-//  MARK: OPENRADAR
+    
+    //  MARK: OPENRADAR
     private func openRadar() {
         print("[NET] Radar START caller=openRadar")
         // compute the new target first
         let newTarget: RadarTarget?
-
+        
         if let fav: FavoriteLocation = selection.selectedFavorite {
             newTarget = RadarTarget(latitude: fav.latitude, longitude: fav.longitude, title: fav.displayName)
         } else if let coord = locationManager.coordinate {
@@ -1982,7 +1514,7 @@ struct ContentView: View {
         } else {
             newTarget = RadarTarget(latitude: 0, longitude: 0, title: "Location unavailable")
         }
-
+        
         // If sheet is already open, reset then set so SwiftUI re-presents with new item
         if radarTarget != nil {
             radarTarget = nil
@@ -2002,9 +1534,9 @@ struct ContentView: View {
                     .foregroundStyle(.red)
                     .font(tempIconFont)
                     .padding(.top, 10)
-
+                
                 Spacer(minLength: 8)
-
+                
                 // Middle: temperature
                 tempTextView
                     .font(.system(size: tempFontSize, weight: .semibold))
@@ -2012,9 +1544,9 @@ struct ContentView: View {
                     .monospacedDigit()
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
-
+                
                 Spacer(minLength: 12)
-
+                
                 // Bottom: radar button
                 Button {
                     openRadar()
@@ -2041,31 +1573,31 @@ struct ContentView: View {
         .background(YAWATheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
-
+    
     private var tempTextView: some View {
         let raw = currentTempText   // e.g. "-28°C" or "72°" or "72°F"
-
+        
         // Normalize so we don't accidentally keep a space before the unit ("-28 °C" or "72 °F")
         let cleaned = raw
             .replacingOccurrences(of: " °C", with: "°C")
             .replacingOccurrences(of: " °F", with: "°F")
             .replacingOccurrences(of: " °", with: "°")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-
+        
         let isCelsius = cleaned.contains("°C")
-
+        
         // Split numeric part from unit and trim any leftover whitespace
         let number = cleaned
             .replacingOccurrences(of: "°C", with: "")
             .replacingOccurrences(of: "°F", with: "")
             .replacingOccurrences(of: "°", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-
+        
         return HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(number)
                 .font(.system(size: tempFontSize, weight: .semibold))
                 .kerning(-1.0)   // subtle tightening, looks better than mono here
-
+            
             // Superscript-like unit to save horizontal space
             Text(isCelsius ? "°C" : "°F")
                 .font(.system(size: tempFontSize * 0.42, weight: .semibold))
@@ -2073,79 +1605,46 @@ struct ContentView: View {
         }
         .foregroundStyle(YAWATheme.textPrimary)
     }
-
+    
     // MARK: - Current Conditions tile computed properties
-
-    private var weatherApiConditionText: String {
-        // Used when NOAA+ is showing WeatherAPI current conditions (international favorites)
-        let t = weatherApiCurrentVM.current?.condition.text
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return t.isEmpty ? viewModel.conditions : t
-    }
-
+    
     private var currentTempText: String {
-        if source == .pws { return viewModel.temp }
+        
         // Existing logic below
-        if source == .noaa && shouldUseWeatherApiForCurrent {
-            return viewModel.temp
-        }
         return viewModel.temp
     }
-
+    
     private var currentWindDisplayText: String {
-        if source == .pws { return viewModel.windDisplay }
-        // Existing logic below
-        if source == .noaa && shouldUseWeatherApiForCurrent {
-            return viewModel.windDisplay
-        }
         return viewModel.windDisplay
     }
-
+    
     private var currentHumidityText: String {
-        if source == .pws { return viewModel.humidity }
-        // Existing logic below
-        if source == .noaa && shouldUseWeatherApiForCurrent {
-            return viewModel.humidity
-        }
         return viewModel.humidity
     }
-
+    
     private var currentPressureText: String {
-        if source == .pws { return viewModel.pressure }
-        // Existing logic below
-        if source == .noaa && shouldUseWeatherApiForCurrent {
-            return viewModel.pressure
-        }
         return viewModel.pressure
     }
-
-
+    
+    
     private var currentPrecipText: String {
-        if source == .pws { return viewModel.precipitation }
-        // Existing logic below
-        if source == .noaa && shouldUseWeatherApiForCurrent {
-            return viewModel.precipitation
-        }
         return viewModel.precipitation
     }
-
+    
     private var currentConditionsText: String {
         // NOAA mode shows conditions text; for international favorites in NOAA+ mode
         // we use WeatherAPI current conditions.
-        if source == .noaa && shouldUseWeatherApiForCurrent {
-            return weatherApiConditionText
-        }
         return viewModel.conditions
     }
-
-
+    
+    
     private func miniTile(_ systemImage: String, _ color: Color, _ value: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: systemImage)
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(color)
                 .font(miniIconFont)
-
+            
             Text(value)
                 .font(miniValueFont)
                 .foregroundStyle(YAWATheme.textPrimary)   // ✅ important for dark sky
@@ -2161,173 +1660,76 @@ struct ContentView: View {
         .background(YAWATheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
-
+    
     
     // MARK: - Async refresh
-
+    
     private func refreshCurrentIfNeeded() async {
-        print("[NET] WeatherAPI forecast START caller=refreshCurrentIfNeeded")
-        // ✅ PWS current conditions come from Weather.com (station-based), not WeatherAPI.
-        // Do not gate this on a coordinate; coordinates are only needed to anchor WeatherAPI forecasts.
-        if source == .pws {
-            // Use a dummy coordinate if needed to satisfy the signature; the PWS fetch should ignore it.
-            let coord = locationManager.coordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
-            await viewModel.refreshCurrentConditions(source: .pws, coord: coord, locationName: nil)
-            return
-        }
-
-        // Choose a coordinate for "current conditions"
-        let coord: CLLocationCoordinate2D?
-        let locationName: String?
-
-        if let fav = selection.selectedFavorite {
-            coord = fav.coordinate
-            locationName = fav.displayName
-        } else {
-            coord = locationManager.coordinate
-            locationName = nil
-        }
-
-        guard let coord else {
-            // This is now a true GPS/favorite failure in NOAA+ mode.
-            viewModel.errorMessage = "Location unavailable."
-            return
-        }
-
-        // ✅ WeatherAPI current (international favorites when in NOAA+ mode)
-        if source == .noaa && shouldUseWeatherApiForCurrent {
-            viewModel.setLoadingPlaceholders()
-            viewModel.errorMessage = nil  // clear any stale NOAA error pill before WeatherAPI refresh
-
-            await weatherApiCurrentVM.refresh(for: coord)
-
-            if let msg = weatherApiCurrentVM.errorMessage {
-                viewModel.errorMessage = msg
+            // NOAA-only current conditions
+            let coord: CLLocationCoordinate2D?
+            let locationName: String?
+    
+            if let f = selection.selectedFavorite {
+                coord = f.coordinate
+                locationName = f.displayName
+            } else {
+                coord = locationManager.coordinate
+                locationName = locationManager.locationName
+            }
+    
+            guard let coord else {
+                viewModel.errorMessage = "Location unavailable."
                 return
             }
-
-            viewModel.errorMessage = nil
-
-            // ✅ THIS is what makes the tiles populate
-            applyWeatherApiCurrentToTiles(locationLabelOverride: weatherApiCurrentVM.locationLabel)
-
-            return
-        }
-
-        // ✅ Otherwise: your existing current refresh logic
-        await viewModel.refreshCurrentConditions(
-            source: source,
-            coord: coord,
-            locationName: locationName
-        )
-    }
     
-    @MainActor
-    private func applyWeatherApiCurrentToTiles(locationLabelOverride: String? = nil) {
-        guard let c = weatherApiCurrentVM.current else { return }
-
-        // Temperature
-        if isInternationalFavorite {
-            viewModel.temp = "\(Int(c.temp_c.rounded()))°C"
-        } else {
-            viewModel.temp = "\(Int(c.temp_f.rounded()))°"
-        }
-
-        // Humidity (optional)
-        if let h = c.humidity {
-            // WeatherAPI model may expose humidity as Double; show as whole percent.
-            viewModel.humidity = "\(Int(Double(h).rounded()))%"
-        } else {
-            viewModel.humidity = "--"
-        }
-
-        // Conditions text
-        viewModel.conditions = c.condition.text.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Wind (optional) + direction (optional)
-        if let mph = c.wind_mph {
-            if isInternationalFavorite {
-                let kph = mph * 1.60934
-                let w = Int(kph.rounded())
-                viewModel.wind = (w == 0) ? "CALM" : "\(w) km/h"
-            } else {
-                let w = Int(mph.rounded())
-                viewModel.wind = (w == 0) ? "CALM" : "\(w) mph"
-            }
-        } else {
-            viewModel.wind = "--"
-        }
-
-        // WeatherAPI current payload (as defined) does not include gust MPH or wind degrees.
-        // Keep these empty/neutral so your UI stays consistent.
-        viewModel.windGust = ""
-        viewModel.windDirection = (c.wind_dir ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        viewModel.windDirectionDegrees = 0
-
-        // Pressure / precip (optional)
-        if let p = c.pressure_in {
-            viewModel.pressure = String(format: "%.2f", p)
-        } else {
-            viewModel.pressure = "--"
-        }
-
-        if let pr = c.precip_in {
-            viewModel.precipitation = String(format: "%.2f in", pr)
-        } else {
-            viewModel.precipitation = "0.00 in"
-        }
-
-        viewModel.lastUpdated = Date()
-
-        // Header label: for international favorites, WeatherAPI has a nicer label
-        if let label = locationLabelOverride, !label.isEmpty {
-            viewModel.currentLocationLabel = label
-        }
-    }
-    
-    
-    
-    private func refreshNow() async {
- //       print("[REFRESH] refreshNow source=\(sourceRaw) fav=\(selection.selectedFavorite?.displayName ?? "nil") gps=\(locationManager.coordinate != nil)")
-        // Effective current refresh for tiles:
-        // - WeatherAPI current when appropriate
-        // - otherwise NOAA current
-        await refreshCurrentIfNeeded()
-    }
-
-    private func refreshNOAACurrent() async {
-        if let f = selection.selectedFavorite {
-            print("🛰️ NOAA refresh → favorite \(f.displayName) lat=\(f.coordinate.latitude), lon=\(f.coordinate.longitude)")
-            await viewModel.fetchCurrentFromNOAA(
-                lat: f.coordinate.latitude,
-                lon: f.coordinate.longitude,
-                locationName: f.displayName
-            )
-        } else {
             await viewModel.refreshCurrentConditions(
-                source: source,
-                coord: locationManager.coordinate,
-                locationName: nil
+                source: .noaa,
+                coord: coord,
+                locationName: locationName
             )
         }
-    }
-
-    private func refreshForecastNow() async {
-        print("[REFRESH] refreshForecastNow source=\(sourceRaw) fav=\(selection.selectedFavorite?.displayName ?? "nil") gps=\(locationManager.coordinate != nil)")
-
-        // ✅ Forecast is NOAA only for US/Canada (i.e. when we're NOT in WeatherAPI fallback mode).
-        guard source == .noaa, !shouldUseWeatherApiForCurrent else { return }
-
-        if let f = selection.selectedFavorite {
-            await forecastVM.refresh(for: f.coordinate)
-            return
+        
+        
+        private func refreshNOAACurrent() async {
+            if let f = selection.selectedFavorite {
+                print("🛰️ NOAA refresh → favorite \(f.displayName) lat=\(f.coordinate.latitude), lon=\(f.coordinate.longitude)")
+                await viewModel.fetchCurrentFromNOAA(
+                    lat: f.coordinate.latitude,
+                    lon: f.coordinate.longitude,
+                    locationName: f.displayName
+                )
+            } else {
+                await viewModel.refreshCurrentConditions(
+                    source: source,
+                    coord: locationManager.coordinate,
+                    locationName: nil
+                )
+            }
         }
+        
+        private func refreshForecastNow() async {
+            print("[REFRESH] refreshForecastNow source=\(sourceRaw) fav=\(selection.selectedFavorite?.displayName ?? "nil") gps=\(locationManager.coordinate != nil)")
+            
+            // ✅ Forecast is NOAA only for US/Canada (i.e. when we're NOT in WeatherAPI fallback mode).
+            
+            
+            if let f = selection.selectedFavorite {
+                await forecastVM.refresh(for: f.coordinate)
+                return
+            }
+            
+            guard let coord = locationManager.coordinate else { return }
+            
+            // ✅ when returning to GPS, force refresh (not loadIfNeeded)
+            await forecastVM.refresh(for: coord)
+        }
+        
+        
+        
 
-        guard let coord = locationManager.coordinate else { return }
+        
+    
 
-        // ✅ when returning to GPS, force refresh (not loadIfNeeded)
-        await forecastVM.refresh(for: coord)
-    }
 
     // MARK: - UI helpers
     
@@ -2715,14 +2117,14 @@ struct ContentView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(
-                        scheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.04),
+                        Color.white.opacity(0.04),
                         lineWidth: 1
                     )
             )
             .shadow(
-                color: Color.black.opacity(scheme == .light ? 0.10 : 0.03),
-                radius: scheme == .light ? 12 : 6,
-                y: scheme == .light ? 6 : 3
+                color: Color.black.opacity(0.05),
+                radius: 8,
+                y: 4
             )
     }
 
@@ -2836,7 +2238,7 @@ final class NOAAHourlyForecastViewModel: ObservableObject {
     }
 
 //    func loadIfNeeded(for coord: CLLocationCoordinate2D, day: Date) async {
-//        
+//
 //        let k = dayKey(day)
 //        guard hourlyByKey[k] == nil else { return }
 //        guard !loadingKeys.contains(k) else { return }
@@ -3425,10 +2827,6 @@ private struct LocationsSheet: View {
                         }
                     }
                 }
-            // Nav bar glass + readable title (Daily Forecast style)
-//            .toolbarBackground(.visible, for: .navigationBar)
-//            .toolbarBackground(YAWATheme.card2, for: .navigationBar)   // ✅ tint like Daily Forecast
-//            .toolbarColorScheme(.dark, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 .preferredColorScheme(.dark)
